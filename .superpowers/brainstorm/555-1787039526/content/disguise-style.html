@@ -1,0 +1,113 @@
+<h2>스프레드시트 위장 스타일, 어떤 게 좋을까요?</h2>
+<p class="subtitle">오목판을 스프레드시트 그리드 안에 숨긴 3가지 안입니다. 돌은 셀 안에 문자(●/○)로 표시됩니다.</p>
+
+<style>
+  .sheet-mock { border: 1px solid #d0d0d0; border-radius: 4px; overflow: hidden; font-family: Arial, "Malgun Gothic", sans-serif; background: #fff; }
+  .sheet-mock * { box-sizing: border-box; }
+
+  /* Google Sheets style */
+  .gs-menubar { background: #fff; padding: 6px 10px; font-size: 11px; color: #444; display: flex; gap: 10px; border-bottom: 1px solid #e0e0e0; }
+  .gs-toolbar { background: #f9fbfd; padding: 6px 10px; display: flex; gap: 8px; align-items: center; border-bottom: 1px solid #e0e0e0; }
+  .gs-icon { width: 18px; height: 18px; background: #dde3ea; border-radius: 2px; }
+  .gs-namebox { background: #fff; border: 1px solid #ccc; font-size: 11px; padding: 2px 6px; width: 40px; }
+  .gs-formulabar { background: #fff; border: 1px solid #ccc; font-size: 11px; padding: 2px 6px; flex: 1; color: #333; }
+  .gs-tab { background: #e8f0fe; color: #1a73e8; font-size: 11px; padding: 4px 10px; border-radius: 3px 3px 0 0; display: inline-block; margin: 4px 0 0 6px; }
+
+  /* Excel style */
+  .xl-ribbon-tabs { background: #f3f2f1; font-size: 11px; color: #444; display: flex; gap: 14px; padding: 4px 10px 0 10px; border-bottom: 1px solid #d0d0d0; }
+  .xl-ribbon-tabs span.active { color: #185abd; font-weight: bold; border-bottom: 2px solid #185abd; padding-bottom: 4px; }
+  .xl-ribbonrow { background: linear-gradient(#fff,#f3f2f1); padding: 6px 10px; display: flex; gap: 6px; border-bottom: 1px solid #d0d0d0; }
+  .xl-btn { width: 22px; height: 20px; background: #e9e9e9; border-radius: 2px; }
+  .xl-sheettab { background: #fff; border-top: 2px solid #217346; font-size: 11px; padding: 4px 12px; display: inline-block; margin: 4px 0 0 6px; }
+
+  /* shared grid */
+  table.grid { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.grid th, table.grid td { border: 1px solid #e0e0e0; width: 26px; height: 22px; text-align: center; color: #333; padding: 0; }
+  table.grid th { background: #f3f3f3; color: #666; font-weight: normal; font-size: 10px; }
+  table.grid td.stone-b { color: #111; font-size: 14px; }
+  table.grid td.stone-w { color: #666; font-size: 14px; }
+  table.grid td.sel { background: #cfe2ff; outline: 2px solid #1a73e8; outline-offset: -2px; }
+
+  /* minimal style */
+  .min-topbar { background: #fafafa; padding: 5px 10px; font-size: 11px; color: #888; border-bottom: 1px solid #eee; }
+  .min-refbox { display:inline-block; background:#fff; border:1px solid #ddd; font-size:11px; padding:2px 8px; color:#555; }
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="google-sheets" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sheet-mock">
+        <div class="gs-menubar">파일 · 수정 · 보기 · 삽입 · 서식 · 데이터 · 도구</div>
+        <div class="gs-toolbar">
+          <div class="gs-icon"></div><div class="gs-icon"></div><div class="gs-icon"></div>
+          <div class="gs-namebox">H8</div>
+          <div class="gs-formulabar">●</div>
+        </div>
+        <table class="grid">
+          <tr><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th><th>I</th><th>J</th></tr>
+          <tr><th>5</th><td></td><td></td><td></td><td></td><td class="stone-w">○</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>6</th><td></td><td></td><td></td><td class="stone-b">●</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>7</th><td></td><td></td><td class="stone-w">○</td><td class="stone-b">●</td><td class="stone-b">●</td><td class="stone-w">○</td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>8</th><td></td><td></td><td></td><td class="stone-w">○</td><td class="stone-b">●</td><td class="stone-b sel">●</td><td class="stone-b">●</td><td></td><td></td><td></td></tr>
+          <tr><th>9</th><td></td><td></td><td></td><td></td><td class="stone-w">○</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>10</th><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        </table>
+        <div class="gs-tab">Sheet1</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Google Sheets 스타일</h3>
+      <p>얇고 플랫한 툴바, 상단 이름상자+수식입력줄. 가장 깔끔하고 구현 부담이 적음</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="excel" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sheet-mock">
+        <div class="xl-ribbon-tabs"><span>파일</span><span class="active">홈</span><span>삽입</span><span>수식</span><span>데이터</span><span>검토</span></div>
+        <div class="xl-ribbonrow">
+          <div class="xl-btn"></div><div class="xl-btn"></div><div class="xl-btn"></div><div class="xl-btn"></div><div class="xl-btn"></div>
+        </div>
+        <table class="grid">
+          <tr><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th><th>I</th><th>J</th></tr>
+          <tr><th>5</th><td></td><td></td><td></td><td></td><td class="stone-w">○</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>6</th><td></td><td></td><td></td><td class="stone-b">●</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>7</th><td></td><td></td><td class="stone-w">○</td><td class="stone-b">●</td><td class="stone-b">●</td><td class="stone-w">○</td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>8</th><td></td><td></td><td></td><td class="stone-w">○</td><td class="stone-b">●</td><td class="stone-b sel">●</td><td class="stone-b">●</td><td></td><td></td><td></td></tr>
+          <tr><th>9</th><td></td><td></td><td></td><td></td><td class="stone-w">○</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>10</th><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        </table>
+        <div class="xl-sheettab">Sheet1</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Excel 스타일</h3>
+      <p>리본 탭 UI라 더 익숙하고 "업무용" 느낌이 강함. 다만 리본 재현에 손이 더 감</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="minimal" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sheet-mock">
+        <div class="min-topbar">업무일지_원장.xlsx &nbsp; <span class="min-refbox">H8</span></div>
+        <table class="grid">
+          <tr><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th><th>I</th><th>J</th></tr>
+          <tr><th>5</th><td></td><td></td><td></td><td></td><td class="stone-w">○</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>6</th><td></td><td></td><td></td><td class="stone-b">●</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>7</th><td></td><td></td><td class="stone-w">○</td><td class="stone-b">●</td><td class="stone-b">●</td><td class="stone-w">○</td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>8</th><td></td><td></td><td></td><td class="stone-w">○</td><td class="stone-b">●</td><td class="stone-b sel">●</td><td class="stone-b">●</td><td></td><td></td><td></td></tr>
+          <tr><th>9</th><td></td><td></td><td></td><td></td><td class="stone-w">○</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><th>10</th><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 미니멀 스타일</h3>
+      <p>가짜 파일명(업무일지_원장.xlsx)만 있는 최소 크롬. 구현이 가장 가볍고 화면도 덜 산만함</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle">체크포인트: 실제로는 15x15 전체 보드가 스크롤 없이 한 화면에 들어가야 위장이 자연스럽습니다. 셀 크기는 이후 단계에서 조정합니다.</p>

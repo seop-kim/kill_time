@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sheet: "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, "Malgun Gothic", sans-serif;
+}
+
+body {
+  color: #1f1f1f;
+}

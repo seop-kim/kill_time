@@ -1,0 +1,74 @@
+<h2>상대방 차례/최근 착수는 어떻게 표시할까요?</h2>
+<p class="subtitle">위장이 깨지지 않으려면 게임 UI(하이라이트, 팝업)가 아니라 스프레드시트가 원래 가진 요소를 재활용하는 게 좋습니다.</p>
+
+<style>
+  .sheet-mock2 { border: 1px solid #d0d0d0; border-radius: 4px; overflow: visible; font-family: Arial, "Malgun Gothic", sans-serif; background: #fff; position: relative; }
+  .sheet-mock2 * { box-sizing: border-box; }
+  .xl-ribbon-tabs2 { background: #f3f2f1; font-size: 11px; color: #444; display: flex; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid #d0d0d0; align-items: center; }
+  .avatars { display: flex; gap: 4px; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+  .avatar.me { background: #7b3fe4; }
+  .avatar.opp { background: #e4693f; box-shadow: 0 0 0 2px #e4693f55; }
+  .avatar.active { outline: 2px solid #e4693f; outline-offset: 1px; }
+
+  table.grid2 { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 4px; }
+  table.grid2 th, table.grid2 td { border: 1px solid #e0e0e0; width: 26px; height: 22px; text-align: center; color: #333; padding: 0; position: relative; }
+  table.grid2 th { background: #f3f3f3; color: #666; font-weight: normal; font-size: 10px; }
+  td.stone-b2 { color: #111; font-size: 14px; }
+  td.stone-w2 { color: #666; font-size: 14px; }
+
+  /* Option A: collaborator cursor style */
+  td.opp-cursor { outline: 2px solid #e4693f; outline-offset: -2px; }
+  .name-tag { position: absolute; top: -18px; left: -1px; background: #e4693f; color: #fff; font-size: 9px; padding: 1px 5px; border-radius: 2px 2px 2px 0; white-space: nowrap; }
+
+  /* Option B: status bar style */
+  .statusbar { background: #f3f2f1; border-top: 1px solid #d0d0d0; padding: 4px 10px; font-size: 11px; color: #666; display: flex; justify-content: space-between; }
+</style>
+
+<div class="split">
+
+  <div class="mockup" data-choice="collab-cursor" onclick="toggleSelect(this)" style="cursor:pointer;">
+    <div class="mockup-header">A. 공동편집 커서 스타일</div>
+    <div class="mockup-body">
+      <div class="sheet-mock2">
+        <div class="xl-ribbon-tabs2">
+          <span>홈 · 삽입 · 수식</span>
+          <div class="avatars">
+            <div class="avatar me">나</div>
+            <div class="avatar opp active">철</div>
+          </div>
+        </div>
+        <table class="grid2">
+          <tr><th></th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th></tr>
+          <tr><th>6</th><td></td><td class="stone-b2">●</td><td></td><td></td><td></td></tr>
+          <tr><th>7</th><td class="stone-w2">○</td><td class="stone-b2">●</td><td class="stone-b2">●</td><td class="stone-w2 opp-cursor"><span class="name-tag">철수</span>○</td><td></td></tr>
+          <tr><th>8</th><td></td><td class="stone-w2">○</td><td class="stone-b2">●</td><td class="stone-b2">●</td><td></td></tr>
+        </table>
+      </div>
+      <p style="font-size:12px;color:#666;margin-top:8px;">실제 엑셀/시트의 "다른 사용자 편집 중" 커서를 그대로 이용. 상대가 둔 셀에 색 테두리+이름표가 자동으로 뜨는 것처럼 보여서 매우 자연스러움. 우측 상단 아바타가 현재 턴을 표시</p>
+    </div>
+  </div>
+
+  <div class="mockup" data-choice="status-bar" onclick="toggleSelect(this)" style="cursor:pointer;">
+    <div class="mockup-header">B. 하단 상태표시줄 스타일</div>
+    <div class="mockup-body">
+      <div class="sheet-mock2">
+        <div class="xl-ribbon-tabs2">
+          <span>홈 · 삽입 · 수식</span>
+          <span></span>
+        </div>
+        <table class="grid2">
+          <tr><th></th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th></tr>
+          <tr><th>6</th><td></td><td class="stone-b2">●</td><td></td><td></td><td></td></tr>
+          <tr><th>7</th><td class="stone-w2">○</td><td class="stone-b2">●</td><td class="stone-b2">●</td><td class="stone-w2">○</td><td></td></tr>
+          <tr><th>8</th><td></td><td class="stone-w2">○</td><td class="stone-b2">●</td><td class="stone-b2">●</td><td></td></tr>
+        </table>
+        <div class="statusbar"><span>준비됨</span><span>철수님 차례 · F7 편집함</span></div>
+      </div>
+      <p style="font-size:12px;color:#666;margin-top:8px;">엑셀 하단바("계산 중.../저장됨" 자리)에 턴/최근 편집 텍스트만 표시. 구현이 더 단순하지만 시각적 임팩트는 약함</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle">승리 시에도 같은 원칙: 팝업 대신 상태표시줄 문구("○○님이 문서를 완료했습니다" 등) 또는 알림 배지로 처리 예정입니다.</p>
