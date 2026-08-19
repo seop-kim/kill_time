@@ -25,6 +25,7 @@ import {
   getMatchParticipants,
   joinRoom,
   leaveRoom,
+  normalizeRoomGameId,
   placeStone,
   rematch,
   requestDraw,
@@ -33,6 +34,7 @@ import {
   skipTurn,
   subscribeChat,
   subscribeRoom,
+  setRoomGame,
   toggleMatchParticipation,
   DISCONNECT_GRACE_MS,
   TURN_SECONDS,
@@ -53,7 +55,13 @@ import {
   type GirinStroke,
 } from "@/lib/girin";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
-import { recordGameResult, recordGirinQuizResult, subscribeUserStats, type GameStats } from "@/lib/stats";
+import {
+  recordGameResult,
+  recordGirinQuizResult,
+  shouldAttemptStatsRecord,
+  subscribeUserStats,
+  type GameStats,
+} from "@/lib/stats";
 import { useToast } from "@/components/Toast";
 import {
   ExcelChrome,
@@ -75,7 +83,7 @@ const MOVE_TAG_MS = 5000;
 
 const GAMES: GameTab[] = [
   { id: "omok", label: "Omok", available: true },
-  { id: "girin", label: "내가 그린 기린 그림", available: true },
+  { id: "girin", label: "girin", available: true },
   { id: "baseball", label: "Baseball", available: false },
   { id: "janggi", label: "Janggi", available: false },
 ];
@@ -150,11 +158,12 @@ export default function RoomClient({ code }: { code: string }) {
   const [showMoveTag, setShowMoveTag] = useState(false);
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
   const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
-  const [activeGameId, setActiveGameId] = useState("omok");
+  const [drawingColor, setDrawingColor] = useState("#222222");
+  const [drawingWidth, setDrawingWidth] = useState(4);
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
-  const statsRecordedRef = useRef<string | null>(null);
-  const girinQuizRecordedRef = useRef<string | null>(null);
+  const statsAttemptedRef = useRef<string | null>(null);
+  const girinQuizAttemptedRef = useRef<string | null>(null);
   const prevGirinStatusRef = useRef<GirinGame["status"] | null>(null);
   const hasConnectedOnceRef = useRef(false);
   const lastMoveInitRef = useRef(false);
@@ -168,6 +177,7 @@ export default function RoomClient({ code }: { code: string }) {
 
   const effectiveRole = room && identity ? effectiveRoleOf(identity, room) : null;
   const playerRole: PlayerRole | null = effectiveRole === "host" || effectiveRole === "guest" ? effectiveRole : null;
+  const activeGameId = normalizeRoomGameId(room?.gameId);
 
   useEffect(() => {
     // localStorage doesn't exist during SSR, so this can only run after mount.
@@ -272,7 +282,6 @@ export default function RoomClient({ code }: { code: string }) {
 
   useEffect(() => {
     if (room?.status !== "finished") {
-      statsRecordedRef.current = null;
       return;
     }
     if (activeGameId !== "omok") return;
@@ -280,7 +289,7 @@ export default function RoomClient({ code }: { code: string }) {
 
     const gameSessionId = room.gameStartedAt ?? room.turnStartedAt ?? `${room.lastMove?.row ?? "none"}-${room.lastMove?.col ?? "none"}`;
     const resultId = `omok:${code}:${gameSessionId}`;
-    if (statsRecordedRef.current === resultId) return;
+    if (!shouldAttemptStatsRecord(statsAttemptedRef.current, resultId)) return;
 
     const result =
       room.winner === "draw"
@@ -288,9 +297,8 @@ export default function RoomClient({ code }: { code: string }) {
         : colorOf(playerRole, room) === room.winner
           ? "win"
           : "loss";
-    statsRecordedRef.current = resultId;
+    statsAttemptedRef.current = resultId;
     recordGameResult(identity.userId, identity.name, "omok", result, resultId).catch(() => {
-      statsRecordedRef.current = null;
       showToast("전적을 저장하지 못했습니다.", "error");
     });
   }, [activeGameId, code, identity, playerRole, room, showToast]);
@@ -299,7 +307,7 @@ export default function RoomClient({ code }: { code: string }) {
     const game = room?.girinGame;
     if (!game) {
       prevGirinStatusRef.current = null;
-      girinQuizRecordedRef.current = null;
+      girinQuizAttemptedRef.current = null;
       return;
     }
 
@@ -322,7 +330,7 @@ export default function RoomClient({ code }: { code: string }) {
     const game = room?.girinGame;
     const roundResult = game?.lastRoundResult;
     if (!game || !roundResult) {
-      girinQuizRecordedRef.current = null;
+      if (!game) girinQuizAttemptedRef.current = null;
       return;
     }
     const participantId = identity?.role === "host" ? "host" : identity?.participantId;
@@ -330,15 +338,14 @@ export default function RoomClient({ code }: { code: string }) {
 
     const gameSessionId = game.startedAt ?? `${code}:${Object.keys(game.participants).sort().join(",")}`;
     const resultId = `girin:quiz:${code}:${gameSessionId}:${roundResult.round}`;
-    if (girinQuizRecordedRef.current === resultId) return;
+    if (!shouldAttemptStatsRecord(girinQuizAttemptedRef.current, resultId)) return;
 
-    girinQuizRecordedRef.current = resultId;
+    girinQuizAttemptedRef.current = resultId;
     recordGirinQuizResult(identity.userId, identity.name, resultId, {
       totalQuizzes: 1,
       correctAnswers: roundResult.outcome === "answered" && roundResult.winnerId === participantId ? 1 : 0,
       stumped: roundResult.outcome === "stumped" && roundResult.winnerId === participantId ? 1 : 0,
     }).catch(() => {
-      girinQuizRecordedRef.current = null;
       showToast("전적을 저장하지 못했습니다.", "error");
     });
   }, [code, identity, room?.girinGame, showToast]);
@@ -614,7 +621,13 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("준비 중입니다.", "info");
       return;
     }
-    setActiveGameId(id);
+    if (identity?.role !== "host") {
+      showToast("방장만 게임을 변경할 수 있습니다.", "info");
+      return;
+    }
+    const nextGameId = normalizeRoomGameId(id);
+    if (nextGameId === activeGameId) return;
+    setRoomGame(code, nextGameId).catch(() => showToast("게임을 변경하지 못했습니다.", "error"));
   }
 
   async function handleCopyCode() {
@@ -921,6 +934,10 @@ export default function RoomClient({ code }: { code: string }) {
         onOpenChat={() => setChatOpen(toggleChatOpen)}
         onRequestUndo={activeGameId === "omok" && playerRole ? handleRequestUndo : undefined}
         onRequestDraw={activeGameId === "omok" && playerRole ? handleRequestDraw : undefined}
+        drawingColor={drawingColor}
+        onDrawingColorChange={setDrawingColor}
+        drawingWidth={drawingWidth}
+        onDrawingWidthChange={setDrawingWidth}
       >
       <div className="relative flex-1 min-h-0 overflow-hidden">
         {activeGameId === "omok" && room.status === "waiting" && (
@@ -949,6 +966,8 @@ export default function RoomClient({ code }: { code: string }) {
             <GirinGamePanel
               game={room.girinGame}
               participantId={identity.role === "host" ? "host" : identity.participantId ?? ""}
+              drawingColor={drawingColor}
+              drawingWidth={drawingWidth}
               onSubmitPrompt={(prompt) => {
                 const participantId = identity.role === "host" ? "host" : identity.participantId;
                 if (!participantId) return;

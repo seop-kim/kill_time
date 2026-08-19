@@ -1,10 +1,34 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { GIRIN_TURN_SECONDS, type GirinGame, type GirinPoint, type GirinStroke } from "../lib/girin";
+import {
+  createGirinStroke,
+  GIRIN_TURN_SECONDS,
+  type GirinGame,
+  type GirinPoint,
+  type GirinStroke,
+} from "../lib/girin";
+import { BOARD_SIZE } from "../lib/gomoku";
 
 const CANVAS_WIDTH = 760;
 const CANVAS_HEIGHT = 430;
+const CELL_W = 26;
+const CELL_H = 22;
+const HEADER_W = 40;
+const GRID_ROWS = 32;
+const COLS = Array.from({ length: BOARD_SIZE }, (_, index) => index);
+const ROWS = Array.from({ length: GRID_ROWS }, (_, index) => index);
+
+function columnLabel(index: number): string {
+  let value = index + 1;
+  let label = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    value = Math.floor((value - 1) / 26);
+  }
+  return label;
+}
 
 function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -30,12 +54,16 @@ export function GirinGamePanel({
   onSubmitPrompt,
   onDrawStroke,
   onTimeUp,
+  drawingColor = "#222",
+  drawingWidth = 4,
 }: {
   game: GirinGame;
   participantId: string;
   onSubmitPrompt: (prompt: string) => void;
   onDrawStroke: (stroke: GirinStroke) => void;
   onTimeUp: () => void;
+  drawingColor?: string;
+  drawingWidth?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentStrokeRef = useRef<GirinStroke | null>(null);
@@ -89,7 +117,7 @@ export function GirinGamePanel({
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (!isDrawer || game.status !== "drawing") return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    currentStrokeRef.current = { points: [pointFromEvent(event)], color: "#222", width: 4 };
+    currentStrokeRef.current = createGirinStroke([pointFromEvent(event)], drawingColor, drawingWidth);
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -124,83 +152,153 @@ export function GirinGamePanel({
     setPromptDraft("");
   }
 
-  return (
-    <div className="h-full overflow-auto bg-[#f8f8f8] px-5 py-4 text-[#333]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-[17px] font-semibold">내가 그린 기린 그림</h2>
-          <p className="mt-1 text-[11px] text-[#777]">정답은 채팅에 정확히 입력하세요. 한 사이클이 지나면 게임이 종료됩니다.</p>
-        </div>
-        {game.status === "drawing" && (
-          <div className={`rounded-sm px-3 py-1.5 text-[16px] font-bold tabular-nums ${remaining <= 10 ? "bg-[#fdecea] text-[#c0392b]" : "bg-white text-[#555]"}`}>
-            {formatTime(remaining)}
-          </div>
-        )}
-      </div>
+  const currentParticipant = game.participants[game.currentParticipantId];
+  const statusLabel = game.status === "prompting" ? "문제 입력" : game.status === "drawing" ? "그림 그리기" : "게임 결과";
+  const footerMessage =
+    game.status === "finished"
+      ? game.winnerId
+        ? game.lastRoundResult?.outcome === "stumped"
+          ? `${game.participants[game.winnerId]?.name ?? "출제자"}님이 5분 동안 정답을 내주지 않아 이번 퀴즈에서 승리했습니다.`
+          : `${game.participants[game.winnerId]?.name ?? "누군가"}님이 정답을 맞혀 이번 퀴즈에서 승리했습니다.`
+        : "한 사이클이 끝났습니다. 승자 없이 게임이 종료되었습니다."
+      : "정답은 채팅에 정확히 입력하세요. 한 사이클이 지나면 게임이 종료됩니다.";
 
-      <div className="mt-3 flex gap-1.5">
-        {orderedParticipants.map((participant) => (
+  return (
+    <div data-girin-grid="true" className="h-full overflow-auto bg-white text-[#333]">
+      <div
+        className="relative grid min-w-max"
+        style={{
+          gridTemplateColumns: `${HEADER_W}px repeat(${BOARD_SIZE}, ${CELL_W}px)`,
+          gridTemplateRows: `repeat(${GRID_ROWS + 1}, ${CELL_H}px)`,
+        }}
+      >
+        <div className="sticky left-0 top-0 z-30 border border-[#e0e0e0] bg-[#f3f3f3]" />
+        {COLS.map((column) => (
           <div
-            key={participant.id}
-            className={`rounded-sm border px-2 py-1 text-[11px] ${participant.id === game.currentParticipantId ? "border-[#217346] bg-[#eaf5ed] font-semibold" : "border-[#d8d8d8] bg-white"}`}
+            key={`header-${column}`}
+            className="sticky top-0 z-20 flex items-center justify-center border border-[#e0e0e0] bg-[#f3f3f3] text-[10px] text-[#666]"
+            style={{ gridColumn: column + 2, gridRow: 1 }}
           >
-            {participant.order}번 {participant.name}
+            {columnLabel(column)}
           </div>
         ))}
-      </div>
-
-      {game.status === "prompting" && (
-        <div className="mt-5 flex min-h-[360px] items-center justify-center rounded-sm border border-dashed border-[#c8c8c8] bg-white">
-          {isDrawer ? (
-            <form onSubmit={handlePromptSubmit} className="flex w-[360px] flex-col gap-3 rounded-sm border border-[#d0d0d0] bg-white p-5 shadow-sm">
-              <p className="text-[14px] font-semibold">문제 입력</p>
-              <p className="text-[11px] text-[#777]">다른 사람에게 보여줄 그림의 정답을 입력합니다. 최대 8자입니다.</p>
-              <input
-                autoFocus
-                value={promptDraft}
-                onChange={(event) => setPromptDraft(event.target.value)}
-                maxLength={8}
-                placeholder="예: 기린"
-                className="rounded-sm border border-[#c8c8c8] px-2 py-2 text-[14px] outline-none focus:border-[#217346]"
-              />
-              <button type="submit" className="rounded-sm bg-[#217346] px-3 py-2 text-[12px] text-white hover:bg-[#1a5c38]">
-                문제 제출 후 그림 그리기
-              </button>
-            </form>
-          ) : (
-            <p className="text-[13px] text-[#777]">{game.participants[game.currentParticipantId]?.name}님이 문제를 준비하고 있습니다.</p>
-          )}
-        </div>
-      )}
-
-      {(game.status === "drawing" || game.status === "finished") && (
-        <div className="mt-5">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[12px] font-semibold">{game.status === "finished" ? "게임 결과" : "그림 그리기"}</span>
-            {game.status === "drawing" && <span className="text-[11px] text-[#777]">{isDrawer ? "그림을 그려 주세요." : "그림을 보고 채팅으로 정답을 맞혀 주세요."}</span>}
-          </div>
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            className={`block border border-[#c8c8c8] bg-[#fffdf7] ${isDrawer && game.status === "drawing" ? "cursor-crosshair" : "cursor-default"}`}
-            style={{ width: `${CANVAS_WIDTH}px`, height: `${CANVAS_HEIGHT}px`, touchAction: "none" }}
-          />
-          {game.status === "finished" && (
-            <div className="mt-3 rounded-sm border border-[#c8e6d0] bg-[#effaf2] px-3 py-2 text-[13px]">
-              {game.winnerId
-                ? game.lastRoundResult?.outcome === "stumped"
-                  ? `${game.participants[game.winnerId]?.name ?? "출제자"}님이 5분 동안 정답을 내주지 않아 이번 퀴즈에서 승리했습니다.`
-                  : `${game.participants[game.winnerId]?.name ?? "누군가"}님이 정답을 맞혀 이번 퀴즈에서 승리했습니다.`
-                : "한 사이클이 끝났습니다. 승자 없이 게임이 종료되었습니다."}
+        {ROWS.map((row) => (
+          <div key={`row-header-${row}`} className="contents">
+            <div
+              className="sticky left-0 z-10 flex items-center justify-center border border-[#e0e0e0] bg-[#f3f3f3] text-[10px] text-[#666]"
+              style={{ gridColumn: 1, gridRow: row + 2 }}
+            >
+              {row + 1}
             </div>
+            {COLS.map((column) => (
+              <div
+                key={`${row}-${column}`}
+                className="border border-[#e0e0e0] bg-white"
+                style={{ gridColumn: column + 2, gridRow: row + 2 }}
+              />
+            ))}
+          </div>
+        ))}
+
+        <div
+          data-merged-cell="girin-status"
+          className="z-10 flex items-center justify-between border border-[#b8cdbd] bg-[#f5fbf6] px-3"
+          style={{ gridColumn: "2 / span 40", gridRow: "2 / span 3" }}
+        >
+          <div>
+            <div className="text-[14px] font-semibold text-[#217346]">{statusLabel}</div>
+            <div className="mt-1 text-[11px] text-[#666]">
+              {game.status === "prompting"
+                ? `${currentParticipant?.name ?? "현재 출제자"}님이 문제를 준비합니다.`
+                : game.status === "drawing"
+                  ? isDrawer
+                    ? "문제를 제출하고 그림을 그려 주세요."
+                    : "그림을 보고 채팅으로 정답을 맞혀 주세요."
+                  : "이번 사이클의 결과가 확정되었습니다."}
+            </div>
+          </div>
+          <span className="text-[11px] text-[#666]">{game.currentRound}라운드</span>
+        </div>
+
+        <div
+          data-merged-cell="girin-timer"
+          className={`z-10 flex flex-col items-center justify-center border px-2 ${remaining <= 10 && game.status === "drawing" ? "border-[#d9534f] bg-[#fdecea] text-[#c0392b]" : "border-[#d8d8d8] bg-white text-[#555]"}`}
+          style={{ gridColumn: "44 / span 8", gridRow: "2 / span 3" }}
+        >
+          <span className="text-[10px] text-[#777]">남은 시간</span>
+          <span className="mt-0.5 text-[18px] font-bold tabular-nums">{game.status === "drawing" ? formatTime(remaining) : "--:--"}</span>
+        </div>
+
+        <div
+          data-merged-cell="girin-content"
+          className="z-10 flex items-center justify-center overflow-hidden border border-[#b8b8b8] bg-white"
+          style={{ gridColumn: "2 / span 30", gridRow: "6 / span 20" }}
+        >
+          {game.status === "prompting" ? (
+            isDrawer ? (
+              <form onSubmit={handlePromptSubmit} className="flex w-[360px] flex-col gap-3 border border-[#d0d0d0] bg-white p-5 shadow-sm">
+                <p className="text-[14px] font-semibold">문제 입력</p>
+                <p className="text-[11px] text-[#777]">다른 사람에게 보여줄 그림의 정답을 입력합니다. 최대 8자입니다.</p>
+                <input
+                  autoFocus
+                  value={promptDraft}
+                  onChange={(event) => setPromptDraft(event.target.value)}
+                  maxLength={8}
+                  placeholder="예: 기린"
+                  className="border border-[#c8c8c8] px-2 py-2 text-[14px] outline-none focus:border-[#217346]"
+                />
+                <button type="submit" className="bg-[#217346] px-3 py-2 text-[12px] text-white hover:bg-[#1a5c38]">
+                  문제 제출 후 그림 그리기
+                </button>
+              </form>
+            ) : (
+              <p className="text-[13px] text-[#777]">{currentParticipant?.name}님이 문제를 준비하고 있습니다.</p>
+            )
+          ) : (
+            <canvas
+              ref={canvasRef}
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              className={`block h-full w-full bg-[#fffdf7] ${isDrawer && game.status === "drawing" ? "cursor-crosshair" : "cursor-default"}`}
+              style={{ touchAction: "none" }}
+            />
           )}
         </div>
-      )}
+
+        <div
+          data-merged-cell="girin-participants"
+          className="z-10 flex flex-col border border-[#d0d0d0] bg-white px-3 py-2"
+          style={{ gridColumn: "34 / span 18", gridRow: "6 / span 20" }}
+        >
+          <div className="border-b border-[#e5e5e5] pb-1 text-[12px] font-semibold">참여 순서</div>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {orderedParticipants.map((participant) => (
+              <div
+                key={participant.id}
+                className={`flex items-center justify-between border px-2 py-1.5 text-[11px] ${participant.id === game.currentParticipantId ? "border-[#217346] bg-[#eaf5ed] font-semibold" : "border-[#e0e0e0] bg-white"}`}
+              >
+                <span className="truncate">{participant.name}</span>
+                <span className="text-[10px] text-[#777]">{participant.order}번</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-auto border-t border-[#e5e5e5] pt-2 text-[10px] text-[#777]">
+            {game.status === "drawing" ? (isDrawer ? "현재 출제자입니다." : "정답을 채팅으로 보내 주세요.") : "순서대로 한 명씩 출제합니다."}
+          </div>
+        </div>
+
+        <div
+          data-merged-cell="girin-footer"
+          className={`z-10 flex items-center border px-3 text-[11px] ${game.status === "finished" ? "border-[#c8e6d0] bg-[#effaf2] text-[#245b35]" : "border-[#d0d0d0] bg-[#fafafa] text-[#666]"}`}
+          style={{ gridColumn: "2 / span 50", gridRow: "27 / span 4" }}
+        >
+          {footerMessage}
+        </div>
+      </div>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import type { MatchParticipant, ParticipantRole } from "./rooms";
 
 export const GIRIN_TURN_SECONDS = 300;
 export const GIRIN_PROMPT_MAX_LENGTH = 8;
+export const DEFAULT_GIRIN_STROKE_COLOR = "#222";
 
 export interface GirinParticipant {
   id: string;
@@ -21,6 +22,10 @@ export interface GirinStroke {
   points: GirinPoint[];
   color: string;
   width: number;
+}
+
+export function createGirinStroke(points: GirinPoint[], color = DEFAULT_GIRIN_STROKE_COLOR, width = 4): GirinStroke {
+  return { points, color, width };
 }
 
 export type GirinRoundOutcome = "answered" | "stumped";

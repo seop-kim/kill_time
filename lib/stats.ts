@@ -23,6 +23,10 @@ export interface UserStatsProfile {
 
 const EMPTY_STATS: GameStats = { played: 0, wins: 0, losses: 0, draws: 0 };
 
+export function shouldAttemptStatsRecord(lastAttemptedResultId: string | null, resultId: string): boolean {
+  return lastAttemptedResultId !== resultId;
+}
+
 function normalizeStats(value: Partial<GameStats> | null | undefined): GameStats {
   const normalized: GameStats = {
     played: Number(value?.played) || 0,
