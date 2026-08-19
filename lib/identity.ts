@@ -1,8 +1,9 @@
-import type { PlayerRole } from "./rooms";
+import type { ParticipantRole } from "./rooms";
 
 export interface StoredIdentity {
-  role: PlayerRole;
+  role: ParticipantRole;
   name: string;
+  participantId?: string;
 }
 
 const STORAGE_PREFIX = "kt_room_";

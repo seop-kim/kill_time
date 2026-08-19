@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -136,6 +137,13 @@ function AddinsIcon() {
       <div className="bg-[#fbc02d]" />
     </div>
   );
+}
+
+const RIBBON_ACTION_CLASS =
+  "flex h-[42px] w-[58px] flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] hover:bg-[#e8e8e8] rounded-[2px] px-1";
+
+function CopilotIcon() {
+  return <Image src="/copilot-icon.png" alt="" width={14} height={14} priority className="shrink-0 object-contain" />;
 }
 const CommentIcon = () => (
   <Icon>
@@ -362,13 +370,32 @@ function Dropdown({ children, w = 70 }: { children: React.ReactNode; w?: number 
   );
 }
 
-function TopBtn({ icon, label, pill }: { icon: React.ReactNode; label: string; pill?: boolean }) {
+function TopBtn({
+  icon,
+  label,
+  pill,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  pill?: boolean;
+  onClick?: () => void;
+}) {
+  const className = `flex items-center gap-1 px-1.5 py-1 text-[10px] ${
+    pill ? "border border-[#d8d8d8] rounded-full" : "hover:bg-[#f0f0f0] rounded-[2px]"
+  }`;
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {icon}
+        {label}
+      </button>
+    );
+  }
+
   return (
-    <div
-      className={`flex items-center gap-1 px-1.5 py-1 text-[10px] ${
-        pill ? "border border-[#d8d8d8] rounded-full" : "hover:bg-[#f0f0f0] rounded-[2px]"
-      }`}
-    >
+    <div className={className}>
       {icon}
       {label}
     </div>
@@ -376,10 +403,46 @@ function TopBtn({ icon, label, pill }: { icon: React.ReactNode; label: string; p
 }
 
 export interface ChromeAvatar {
+  id?: string;
   name: string;
   color: string;
   isTurn: boolean;
   online?: boolean;
+}
+
+export interface ParticipantGroups {
+  players: ChromeAvatar[];
+  observers: ChromeAvatar[];
+}
+
+export function ParticipantList({ participants }: { participants: ParticipantGroups }) {
+  function renderGroup(label: string, entries: ChromeAvatar[]) {
+    return (
+      <>
+        <div className="text-[9px] font-semibold text-[#555] px-1 pt-1 pb-0.5">{label}</div>
+        {entries.length > 0 ? (
+          entries.map((a) => (
+            <div key={a.id ?? a.name} className="flex items-center gap-1.5 px-1 py-0.5">
+              <span
+                className="w-[7px] h-[7px] rounded-full shrink-0"
+                style={{ background: a.online === false ? "#bbb" : "#3aa757" }}
+              />
+              <span className="truncate">{a.name}</span>
+            </div>
+          ))
+        ) : (
+          <div className="text-[9px] text-[#999] px-1 py-0.5">없음</div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {renderGroup("게임 중", participants.players)}
+      {renderGroup("옵저버", participants.observers)}
+    </>
+  );
 }
 
 export interface GameTab {
@@ -390,15 +453,102 @@ export interface GameTab {
 
 const zoomStyle = { zoom: 1.5 } as React.CSSProperties;
 
+export function SettingsDropdown({
+  onStartGame,
+  onRestart,
+  onLeave,
+}: {
+  onStartGame?: () => void;
+  onRestart?: () => void;
+  onLeave?: () => void;
+}) {
+  return (
+    <div className="absolute right-0 top-[26px] z-50 flex flex-col items-stretch bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1 w-[140px] text-[11px] text-[#333]">
+      {onStartGame && (
+        <button onClick={onStartGame} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
+          게임 시작
+        </button>
+      )}
+      {onRestart && (
+        <button onClick={onRestart} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
+          게임 다시 시작
+        </button>
+      )}
+      {onLeave && (
+        <button onClick={onLeave} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
+          방 나가기
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function CopilotButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="코파일럿 열기"
+      onClick={onClick}
+      className={RIBBON_ACTION_CLASS}
+    >
+      <CopilotIcon />
+      코파일럿
+    </button>
+  );
+}
+
+export function AddinsMenuItems({
+  onRequestUndo,
+  onRequestDraw,
+  onClose,
+}: {
+  onRequestUndo?: () => void;
+  onRequestDraw?: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {onRequestUndo && (
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onRequestUndo();
+          }}
+          className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+        >
+          한 수 무르기
+        </button>
+      )}
+      {onRequestDraw && (
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onRequestDraw();
+          }}
+          className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+        >
+          무승부 요청
+        </button>
+      )}
+    </>
+  );
+}
+
 export function ExcelChrome({
   fileName,
   avatars,
+  participants,
+  statusLabel = "편집 중",
+  onStatusClick,
   onShare,
   games,
   activeGameId,
   onSelectGame,
   rematchLabel,
   onRematch,
+  onStartGame,
   onRestart,
   onLeave,
   timerSeconds,
@@ -409,12 +559,16 @@ export function ExcelChrome({
 }: {
   fileName: string;
   avatars: ChromeAvatar[];
+  participants?: ParticipantGroups;
+  statusLabel?: string;
+  onStatusClick?: () => void;
   onShare: () => void;
   games: GameTab[];
   activeGameId: string;
   onSelectGame: (id: string) => void;
   rematchLabel?: string;
   onRematch?: () => void;
+  onStartGame?: () => void;
   onRestart?: () => void;
   onLeave?: () => void;
   timerSeconds?: number | null;
@@ -427,10 +581,9 @@ export function ExcelChrome({
   const [addinsOpen, setAddinsOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
 
-  // The add-ins button lives inside the ribbon toolbar row, which has
-  // overflow-x-auto — per the CSS overflow spec that implicitly makes
-  // overflow-y auto too, so a dropdown nested inside it gets clipped/scrolled
-  // instead of opening freely. Portal it to <body> as a fixed-position panel
+  // The add-ins button lives inside the fixed-width ribbon toolbar row, which
+  // clips overflow, so a dropdown nested inside it gets clipped instead of
+  // opening freely. Portal it to <body> as a fixed-position panel
   // anchored to the button's real screen position instead.
   const addinsButtonRef = useRef<HTMLButtonElement>(null);
   const [addinsPos, setAddinsPos] = useState<{ top: number; left: number } | null>(null);
@@ -443,10 +596,13 @@ export function ExcelChrome({
   }, [addinsOpen]);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden text-[#333]" style={zoomStyle}>
+    <div
+      className="fixed left-0 top-0 bottom-0 w-[1280px] min-w-[1280px] flex flex-col overflow-hidden text-[#333]"
+      style={zoomStyle}
+    >
       <div className="shrink-0">
         {/* row 1: title bar */}
-        <div className="flex items-center gap-2 px-2 py-1.5 border-b border-[#e8e8e8]">
+        <div className="flex items-center gap-2 px-2 py-1.5 border-b border-[#e8e8e8] whitespace-nowrap">
           <Waffle />
           <svg width="18" height="18" viewBox="0 0 32 32" className="shrink-0">
             <rect width="32" height="32" rx="4" fill="#217346" />
@@ -456,14 +612,14 @@ export function ExcelChrome({
             <line x1="13" y1="6" x2="13" y2="26" stroke="#fff" strokeOpacity="0.9" strokeWidth="1.2" />
             <line x1="19.5" y1="6" x2="19.5" y2="26" stroke="#fff" strokeOpacity="0.9" strokeWidth="1.2" />
           </svg>
-          <span className="text-[13px] text-[#444]">{fileName}</span>
+          <span className="shrink-0 text-[13px] text-[#444]">{fileName}</span>
           <span className="w-[13px] h-[13px] rounded-full border border-[#aaa] text-[8px] text-[#888] flex items-center justify-center">
             ?
           </span>
           <CloudIcon />
 
           <div className="flex-1 flex justify-center">
-            <div className="w-[340px] max-w-full bg-[#f3f2f1] rounded-full px-3 py-1 flex items-center gap-1.5 select-none">
+            <div className="w-[340px] bg-[#f3f2f1] rounded-full px-3 py-1 flex items-center gap-1.5 select-none">
               <SearchIconSmall />
               <span className="text-[11px] text-[#888]">도구, 도움말 등을 검색(Alt + Q)</span>
             </div>
@@ -476,33 +632,35 @@ export function ExcelChrome({
             >
               <GearIcon />
             </button>
-            {settingsOpen && (onRestart || onLeave) && (
+            {settingsOpen && (onStartGame || onRestart || onLeave) && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setSettingsOpen(false)} />
-                <div className="absolute right-0 top-[26px] z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1 w-[140px] text-[11px] text-[#333]">
-                  {onRestart && (
-                    <button
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        onRestart();
-                      }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]"
-                    >
-                      게임 다시 시작
-                    </button>
-                  )}
-                  {onLeave && (
-                    <button
-                      onClick={() => {
-                        setSettingsOpen(false);
-                        onLeave();
-                      }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]"
-                    >
-                      방 나가기
-                    </button>
-                  )}
-                </div>
+                <SettingsDropdown
+                  onStartGame={
+                    onStartGame
+                      ? () => {
+                          setSettingsOpen(false);
+                          onStartGame();
+                        }
+                      : undefined
+                  }
+                  onRestart={
+                    onRestart
+                      ? () => {
+                          setSettingsOpen(false);
+                          onRestart();
+                        }
+                      : undefined
+                  }
+                  onLeave={
+                    onLeave
+                      ? () => {
+                          setSettingsOpen(false);
+                          onLeave();
+                        }
+                      : undefined
+                  }
+                />
               </>
             )}
           </div>
@@ -517,7 +675,7 @@ export function ExcelChrome({
         </div>
 
         {/* row 2: ribbon tabs + collaboration cluster */}
-        <div className="flex items-center justify-between px-3 border-b border-[#d0d0d0]">
+        <div className="flex items-center justify-between px-3 border-b border-[#d0d0d0] whitespace-nowrap">
           <div className="flex gap-4 text-[11px] text-[#444] pt-1.5">
             {RIBBON_TABS.map((tab) => (
               <span
@@ -546,7 +704,7 @@ export function ExcelChrome({
             >
               {avatars.map((a) => (
                 <div
-                  key={a.name}
+                  key={a.id ?? a.name}
                   className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] leading-none font-bold text-white ring-2 ring-white"
                   style={{ background: a.color, boxShadow: a.isTurn ? "0 0 0 2px #e4693f" : undefined }}
                 >
@@ -556,21 +714,25 @@ export function ExcelChrome({
               {avatarTooltip && (
                 <div className="absolute right-0 top-[22px] z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 px-2 w-[150px] text-[10px] text-[#333]">
                   <div className="text-[9px] text-[#999] px-1 pb-1">현재 참여자</div>
-                  {avatars.map((a) => (
-                    <div key={a.name} className="flex items-center gap-1.5 px-1 py-0.5">
-                      <span
-                        className="w-[7px] h-[7px] rounded-full shrink-0"
-                        style={{ background: a.online === false ? "#bbb" : "#3aa757" }}
-                      />
-                      <span className="truncate">{a.name}</span>
-                    </div>
-                  ))}
+                  {participants ? (
+                    <ParticipantList participants={participants} />
+                  ) : (
+                    avatars.map((a) => (
+                      <div key={a.id ?? a.name} className="flex items-center gap-1.5 px-1 py-0.5">
+                        <span
+                          className="w-[7px] h-[7px] rounded-full shrink-0"
+                          style={{ background: a.online === false ? "#bbb" : "#3aa757" }}
+                        />
+                        <span className="truncate">{a.name}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>
             <TopBtn icon={<CommentIcon />} label="메모" />
             <TopBtn icon={<HistoryIcon />} label="따라잡기" />
-            <TopBtn icon={<PencilIcon />} label="편집 중" pill />
+            <TopBtn icon={<PencilIcon />} label={statusLabel} pill onClick={onStatusClick} />
             <TopBtn icon={<ShieldIcon />} label="민감도" />
             <Chevron />
             <button
@@ -583,7 +745,7 @@ export function ExcelChrome({
         </div>
 
         {/* row 3: ribbon toolbar */}
-        <div className="flex items-stretch px-2 py-1 border-b border-[#d0d0d0] bg-gradient-to-b from-white to-[#f3f2f1] overflow-x-auto">
+        <div className="flex items-stretch px-2 py-1 border-b border-[#d0d0d0] bg-gradient-to-b from-white to-[#f3f2f1] overflow-hidden whitespace-nowrap">
           <div className="flex flex-col items-center gap-1 pr-1.5">
             <div className="flex items-center gap-1">
               <MiniBtn>
@@ -743,62 +905,38 @@ export function ExcelChrome({
               <Chevron />
             </span>
           </div>
-          <div className="relative flex flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] px-1">
-            <button
-              ref={addinsButtonRef}
-              onClick={() => setAddinsOpen((v) => !v)}
-              className="flex flex-col items-center gap-0.5 hover:bg-[#e8e8e8] rounded-[2px] px-1"
-            >
-              <AddinsIcon />
-              추가 기능
-            </button>
-            {addinsOpen &&
-              addinsPos &&
-              (onOpenChat || onRequestUndo || onRequestDraw) &&
-              createPortal(
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setAddinsOpen(false)} />
-                  <div
-                    className="fixed z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 w-[200px] text-[15px] text-[#333] text-left"
-                    style={{ top: addinsPos.top, left: addinsPos.left }}
-                  >
-                    {onOpenChat && (
-                      <button
-                        onClick={() => {
-                          setAddinsOpen(false);
-                          onOpenChat();
-                        }}
-                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
-                      >
-                        채팅
-                      </button>
-                    )}
-                    {onRequestUndo && (
-                      <button
-                        onClick={() => {
-                          setAddinsOpen(false);
-                          onRequestUndo();
-                        }}
-                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
-                      >
-                        한 수 무르기
-                      </button>
-                    )}
-                    {onRequestDraw && (
-                      <button
-                        onClick={() => {
-                          setAddinsOpen(false);
-                          onRequestDraw();
-                        }}
-                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
-                      >
-                        무승부 요청
-                      </button>
-                    )}
-                  </div>
-                </>,
-                document.body,
-              )}
+          <div className="flex items-start gap-1 self-center">
+            <div className="relative flex flex-col items-center justify-center">
+              <button
+                type="button"
+                ref={addinsButtonRef}
+                onClick={() => setAddinsOpen((v) => !v)}
+                className={RIBBON_ACTION_CLASS}
+              >
+                <AddinsIcon />
+                추가 기능
+              </button>
+              {addinsOpen &&
+                addinsPos &&
+                (onRequestUndo || onRequestDraw) &&
+                createPortal(
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setAddinsOpen(false)} />
+                    <div
+                      className="fixed z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 w-[200px] text-[15px] text-[#333] text-left"
+                      style={{ top: addinsPos.top, left: addinsPos.left }}
+                    >
+                      <AddinsMenuItems
+                        onRequestUndo={onRequestUndo}
+                        onRequestDraw={onRequestDraw}
+                        onClose={() => setAddinsOpen(false)}
+                      />
+                    </div>
+                  </>,
+                  document.body,
+                )}
+            </div>
+            {onOpenChat && <CopilotButton onClick={onOpenChat} />}
           </div>
         </div>
       </div>

@@ -18,9 +18,11 @@ import {
   acceptDraw,
   acceptUndo,
   armPresence,
+  canRequestUndo,
   cancelDrawRequest,
   cancelUndoRequest,
   forfeit,
+  getGameCandidates,
   joinRoom,
   placeStone,
   rematch,
@@ -28,11 +30,13 @@ import {
   requestUndo,
   sendChatMessage,
   skipTurn,
+  startGame,
   subscribeChat,
   subscribeRoom,
   DISCONNECT_GRACE_MS,
   TURN_SECONDS,
   type ChatMessage,
+  type ParticipantRole,
   type PlayerRole,
   type Room,
 } from "@/lib/rooms";
@@ -40,6 +44,7 @@ import { loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity"
 import { useToast } from "@/components/Toast";
 import { ExcelChrome, type ChromeAvatar, type GameTab } from "@/components/ExcelChrome";
 import { ChatPanel } from "@/components/ChatPanel";
+import { toggleChatOpen } from "@/lib/chat";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
 const ROWS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
@@ -70,6 +75,19 @@ function nameOfColor(color: Stone, room: Room): string | undefined {
   return colorOf("host", room) === color ? room.host.name : room.guest?.name;
 }
 
+function effectiveRoleOf(identity: StoredIdentity, room: Room): ParticipantRole {
+  if (identity.role === "host") return "host";
+  const guestId = room.guest?.id;
+  if (
+    room.guest &&
+    ((identity.participantId && guestId === identity.participantId) ||
+      (!identity.participantId && identity.role === "guest" && room.guest.name === identity.name))
+  ) {
+    return "guest";
+  }
+  return "spectator";
+}
+
 export default function RoomClient({ code }: { code: string }) {
   const showToast = useToast();
   const router = useRouter();
@@ -85,6 +103,8 @@ export default function RoomClient({ code }: { code: string }) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
   const [showMoveTag, setShowMoveTag] = useState(false);
+  const [opponentPickerOpen, setOpponentPickerOpen] = useState(false);
+  const [startingGame, setStartingGame] = useState(false);
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
   const hasConnectedOnceRef = useRef(false);
@@ -96,6 +116,9 @@ export default function RoomClient({ code }: { code: string }) {
   const opponentPresenceInitRef = useRef(false);
   const prevOpponentOnlineRef = useRef<boolean | undefined>(undefined);
   const centeredOnceRef = useRef(false);
+
+  const effectiveRole = room && identity ? effectiveRoleOf(identity, room) : null;
+  const playerRole: PlayerRole | null = effectiveRole === "host" || effectiveRole === "guest" ? effectiveRole : null;
 
   useEffect(() => {
     // localStorage doesn't exist during SSR, so this can only run after mount.
@@ -140,13 +163,13 @@ export default function RoomClient({ code }: { code: string }) {
 
   // Arms Firebase's server-side disconnect detection for my own presence.
   useEffect(() => {
-    if (!identity) return;
+    if (!identity || !effectiveRole) return;
     try {
-      return armPresence(code, identity.role);
+      return armPresence(code, effectiveRole, identity.participantId);
     } catch {
       return undefined;
     }
-  }, [code, identity]);
+  }, [code, identity, effectiveRole]);
 
   useEffect(() => {
     if (!identity) return;
@@ -161,13 +184,22 @@ export default function RoomClient({ code }: { code: string }) {
     if (!room) return;
     if (room.status === "finished" && prevStatusRef.current !== "finished") {
       const winnerName = room.winner && room.winner !== "draw" ? nameOfColor(room.winner, room) : undefined;
+      const resultMessage =
+        room.winner === "draw"
+          ? "무승부입니다."
+          : playerRole
+            ? colorOf(playerRole, room) === room.winner
+              ? "승리했습니다!"
+              : "패배했습니다."
+            : `${winnerName ?? "상대방"}님이 승리했습니다.`;
       showToast(
-        room.winner === "draw" ? "무승부로 종료되었습니다." : `${winnerName ?? "상대방"}님이 문서를 완료했습니다.`,
+        resultMessage,
         "info",
+        { placement: "top-center", emphasis: true },
       );
     }
     prevStatusRef.current = room.status;
-  }, [room, showToast]);
+  }, [room, playerRole, showToast]);
 
   useEffect(() => {
     if (!room || !identity) return;
@@ -197,8 +229,8 @@ export default function RoomClient({ code }: { code: string }) {
 
     if (moveChanged && lm) {
       const moverColor: Stone = room.turn === "black" ? "white" : "black";
-      const myColor = colorOf(identity.role, room);
-      if (moverColor !== myColor) {
+      const myColor = playerRole ? colorOf(playerRole, room) : null;
+      if (!playerRole || moverColor !== myColor) {
         const moverName = nameOfColor(moverColor, room) ?? "상대방";
         showToast(`${moverName}님이 ${columnLabel(lm.col)}${lm.row + 1} 셀을 입력했습니다.`, "info");
       }
@@ -213,7 +245,7 @@ export default function RoomClient({ code }: { code: string }) {
     prevLastMoveRef.current = lm;
     prevTurnStartedAtRef.current = room.turnStartedAt;
     prevPlayingStatusRef.current = room.status;
-  }, [room, identity, showToast]);
+  }, [room, identity, playerRole, showToast]);
 
   useEffect(() => {
     return () => {
@@ -252,7 +284,7 @@ export default function RoomClient({ code }: { code: string }) {
   }, [turnStartedAt, currentTurn, roomStatus, code]);
 
   // Opponent disconnect → grace period → forfeit in their favor.
-  const opponentRole = identity ? opposite(identity.role) : null;
+  const opponentRole = playerRole ? opposite(playerRole) : null;
   const opponentOnline = opponentRole && room ? room.presence?.[opponentRole] : undefined;
 
   useEffect(() => {
@@ -273,11 +305,11 @@ export default function RoomClient({ code }: { code: string }) {
     if (!identity || !opponentRole || roomStatus !== "playing" || opponentOnline !== false) return undefined;
     const timer = setTimeout(() => {
       if (!room) return;
-      forfeit(code, colorOf(identity.role, room)).catch(() => {});
+      if (playerRole) forfeit(code, colorOf(playerRole, room)).catch(() => {});
     }, DISCONNECT_GRACE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opponentOnline, roomStatus, identity, opponentRole, code]);
+  }, [opponentOnline, roomStatus, identity, playerRole, opponentRole, code]);
 
   const board = useMemo(() => room?.board ?? {}, [room]);
 
@@ -297,22 +329,57 @@ export default function RoomClient({ code }: { code: string }) {
         );
         return;
       }
-      saveIdentity(code, { role: result.role, name: trimmed });
-      setIdentity({ role: result.role, name: trimmed });
+      saveIdentity(code, { role: result.role, name: trimmed, participantId: result.participantId });
+      setIdentity({ role: result.role, name: trimmed, participantId: result.participantId });
     } finally {
       setJoining(false);
     }
   }
 
-  function handleCellClick(row: number, col: number) {
+  async function handleStartGame(candidateId?: string) {
     if (!room || !identity) return;
+    if (effectiveRole !== "host") {
+      showToast("방장만 게임을 시작할 수 있습니다.", "info");
+      return;
+    }
+    if (room.status === "playing") {
+      showToast("이미 게임이 진행 중입니다.", "info");
+      return;
+    }
+    if (startingGame) return;
+
+    const candidates = getGameCandidates(room);
+    if (candidates.length === 0) {
+      showToast("게임 상대가 없습니다. 참여자를 기다려 주세요.", "info");
+      return;
+    }
+    const selectedId = candidateId ?? (candidates.length === 1 ? candidates[0].id : null);
+    if (!selectedId) {
+      setOpponentPickerOpen(true);
+      return;
+    }
+
+    setStartingGame(true);
+    try {
+      await startGame(code, selectedId);
+      setOpponentPickerOpen(false);
+      showToast("게임을 시작했습니다.", "info");
+    } catch {
+      showToast("게임을 시작하지 못했습니다.", "error");
+    } finally {
+      setStartingGame(false);
+    }
+  }
+
+  function handleCellClick(row: number, col: number) {
+    if (!room || !playerRole) return;
     if (room.status === "waiting") {
-      showToast("공동 작업자를 기다리는 중입니다.", "info");
+      showToast("방장이 게임을 시작할 때까지 대기 중입니다.", "info");
       return;
     }
     if (room.status === "finished") return;
 
-    const myColor = colorOf(identity.role, room);
+    const myColor = colorOf(playerRole, room);
     if (room.turn !== myColor) {
       showToast("상대방 차례입니다.", "error");
       return;
@@ -359,6 +426,7 @@ export default function RoomClient({ code }: { code: string }) {
     if (!room) return;
     try {
       await rematch(code, room.blackPlayer);
+      setOpponentPickerOpen(false);
     } catch {
       showToast("새 버전을 만들지 못했습니다.", "error");
     }
@@ -374,7 +442,7 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   function handleLeaveClick() {
-    if (room?.status === "playing") {
+    if (room?.status === "playing" && playerRole) {
       setLeaveConfirmOpen(true);
       return;
     }
@@ -383,8 +451,8 @@ export default function RoomClient({ code }: { code: string }) {
 
   async function handleConfirmLeave() {
     setLeaveConfirmOpen(false);
-    if (room && identity) {
-      const myColor = colorOf(identity.role, room);
+    if (room && playerRole) {
+      const myColor = colorOf(playerRole, room);
       const opponentColor: Stone = myColor === "black" ? "white" : "black";
       try {
         await forfeit(code, opponentColor);
@@ -396,7 +464,7 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   function handleRequestUndo() {
-    if (!room || !identity) return;
+    if (!room || !playerRole) return;
     if (room.status !== "playing") {
       showToast("게임 진행 중에만 요청할 수 있습니다.", "info");
       return;
@@ -409,12 +477,16 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("무를 수 있는 수가 없습니다.", "info");
       return;
     }
-    requestUndo(code, identity.role).catch(() => showToast("요청을 보내지 못했습니다.", "error"));
+    if (!canRequestUndo(room, playerRole)) {
+      showToast("상대방이 둔 수를 무를 때만 요청할 수 있습니다.", "info");
+      return;
+    }
+    requestUndo(code, playerRole).catch(() => showToast("요청을 보내지 못했습니다.", "error"));
     showToast("무르기를 요청했습니다.", "info");
   }
 
   function handleRequestDraw() {
-    if (!room || !identity) return;
+    if (!room || !playerRole) return;
     if (room.status !== "playing") {
       showToast("게임 진행 중에만 요청할 수 있습니다.", "info");
       return;
@@ -423,15 +495,14 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("이미 대기 중인 요청이 있습니다.", "info");
       return;
     }
-    requestDraw(code, identity.role).catch(() => showToast("요청을 보내지 못했습니다.", "error"));
+    requestDraw(code, playerRole).catch(() => showToast("요청을 보내지 못했습니다.", "error"));
     showToast("무승부를 요청했습니다.", "info");
   }
 
   async function handleAcceptUndo() {
-    if (!room || !room.lastMove) return;
-    const moverColor: Stone = room.turn === "black" ? "white" : "black";
+    if (!room || !incomingUndoFrom) return;
     try {
-      await acceptUndo(code, room.lastMove, moverColor);
+      await acceptUndo(code, incomingUndoFrom);
     } catch {
       showToast("무르기를 처리하지 못했습니다.", "error");
     }
@@ -454,8 +525,8 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   function handleSendChat(text: string) {
-    if (!identity) return;
-    sendChatMessage(code, { by: identity.role, name: identity.name, text }).catch(() =>
+    if (!identity || !effectiveRole) return;
+    sendChatMessage(code, { by: effectiveRole, name: identity.name, text }).catch(() =>
       showToast("메모를 보내지 못했습니다.", "error"),
     );
   }
@@ -480,7 +551,7 @@ export default function RoomClient({ code }: { code: string }) {
   if (!identity) {
     return (
       <div className="flex-1 flex items-center justify-center px-4">
-        <div className="w-full max-w-sm bg-white border border-[#d0d0d0] rounded-sm shadow-sm px-5 py-4 flex flex-col gap-3">
+        <div className="w-[384px] bg-white border border-[#d0d0d0] rounded-sm shadow-sm px-5 py-4 flex flex-col gap-3">
           <p className="text-[13px] text-[#333]">이 문서에 접근하려면 표시 이름이 필요합니다.</p>
           <input
             value={joinName}
@@ -509,20 +580,28 @@ export default function RoomClient({ code }: { code: string }) {
   const lastMoverColor: Stone | null = room.lastMove ? (room.turn === "black" ? "white" : "black") : null;
   const lastMoverName = lastMoverColor ? nameOfColor(lastMoverColor, room) : undefined;
 
-  const myColor = colorOf(identity.role, room);
-  const cellsDisabled = room.status !== "playing" || room.turn !== myColor;
+  const myColor = playerRole ? colorOf(playerRole, room) : null;
+  const cellsDisabled = !playerRole || room.status !== "playing" || room.turn !== myColor;
 
   const avatars: ChromeAvatar[] = [
-    { name: room.host.name, color: "#7b3fe4", isTurn: hostIsTurn, online: room.presence?.host !== false },
+    { id: room.host.id ?? "host", name: room.host.name, color: "#7b3fe4", isTurn: hostIsTurn, online: room.presence?.host !== false },
     ...(room.guest
-      ? [{ name: room.guest.name, color: "#e4693f", isTurn: guestIsTurn, online: room.presence?.guest !== false }]
+      ? [{ id: room.guest.id ?? "guest", name: room.guest.name, color: "#e4693f", isTurn: guestIsTurn, online: room.presence?.guest !== false }]
       : []),
   ];
 
+  const observerAvatars: ChromeAvatar[] = Object.entries(room.spectators ?? {}).map(([id, spectator]) => ({
+    id,
+    name: spectator.name,
+    color: "#777",
+    isTurn: false,
+    online: room.presence?.spectators?.[id] !== false,
+  }));
+
   const incomingUndoFrom: PlayerRole | null =
-    room.undoRequest && room.undoRequest !== identity.role ? room.undoRequest : null;
+    playerRole && room.undoRequest && room.undoRequest !== playerRole ? room.undoRequest : null;
   const incomingDrawFrom: PlayerRole | null =
-    room.drawRequest && room.drawRequest !== identity.role ? room.drawRequest : null;
+    playerRole && room.drawRequest && room.drawRequest !== playerRole ? room.drawRequest : null;
 
   function centerGridOnMount(el: HTMLDivElement | null) {
     if (!el || centeredOnceRef.current) return;
@@ -539,64 +618,102 @@ export default function RoomClient({ code }: { code: string }) {
       <ExcelChrome
         fileName="25-26_업무현황"
         avatars={avatars}
+        participants={{ players: avatars, observers: observerAvatars }}
+        statusLabel={room.status === "playing" ? "편집 중" : "대기 중"}
+        onStatusClick={room.status === "playing" ? undefined : () => handleStartGame()}
         onShare={handleCopyCode}
         games={GAMES}
         activeGameId="omok"
         onSelectGame={handleSelectGame}
-        onRematch={room.status === "finished" ? handleRematch : undefined}
+        onRematch={room.status === "finished" && effectiveRole === "host" ? handleRematch : undefined}
         rematchLabel="새 버전으로 계속"
-        onRestart={handleRestartClick}
+        onStartGame={room.status === "playing" ? undefined : () => handleStartGame()}
+        onRestart={room.status === "finished" && effectiveRole === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
         timerSeconds={timerSeconds}
-        onOpenChat={() => setChatOpen(true)}
-        onRequestUndo={handleRequestUndo}
-        onRequestDraw={handleRequestDraw}
+        onOpenChat={() => setChatOpen(toggleChatOpen)}
+        onRequestUndo={playerRole ? handleRequestUndo : undefined}
+        onRequestDraw={playerRole ? handleRequestDraw : undefined}
       >
-      {/* grid */}
-      <div className="flex-1 overflow-auto min-h-0" ref={centerGridOnMount}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `${HEADER_W}px repeat(${BOARD_SIZE}, ${CELL_W}px)`,
-          }}
-        >
+      <div className="relative flex-1 min-h-0 overflow-hidden">
+        {/* grid */}
+        <div className="h-full overflow-auto" ref={centerGridOnMount}>
           <div
-            className="sticky top-0 left-0 z-30 bg-[#f3f3f3] border border-[#e0e0e0]"
-            style={{ width: HEADER_W, height: CELL_H }}
-          />
-          {COLS.map((c) => (
+            style={{
+              display: "grid",
+              gridTemplateColumns: `${HEADER_W}px repeat(${BOARD_SIZE}, ${CELL_W}px)`,
+            }}
+          >
             <div
-              key={`h-${c}`}
-              className="sticky top-0 z-20 bg-[#f3f3f3] border border-[#e0e0e0] flex items-center justify-center text-[10px] text-[#666]"
-              style={{ width: CELL_W, height: CELL_H }}
-            >
-              {columnLabel(c)}
-            </div>
-          ))}
-
-          {ROWS.map((r) => (
-            <FragmentRow
-              key={`row-${r}`}
-              row={r}
-              board={board}
-              lastMove={room.lastMove}
-              lastMoverName={lastMoverName}
-              showMoveTag={showMoveTag}
-              disabled={cellsDisabled}
-              onCellClick={handleCellClick}
+              className="sticky top-0 left-0 z-30 bg-[#f3f3f3] border border-[#e0e0e0]"
+              style={{ width: HEADER_W, height: CELL_H }}
             />
-          ))}
+            {COLS.map((c) => (
+              <div
+                key={`h-${c}`}
+                className="sticky top-0 z-20 bg-[#f3f3f3] border border-[#e0e0e0] flex items-center justify-center text-[10px] text-[#666]"
+                style={{ width: CELL_W, height: CELL_H }}
+              >
+                {columnLabel(c)}
+              </div>
+            ))}
+
+            {ROWS.map((r) => (
+              <FragmentRow
+                key={`row-${r}`}
+                row={r}
+                board={board}
+                lastMove={room.lastMove}
+                lastMoverName={lastMoverName}
+                showMoveTag={showMoveTag}
+                disabled={cellsDisabled}
+                onCellClick={handleCellClick}
+              />
+            ))}
+          </div>
         </div>
+
+        <ChatPanel
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          messages={chatMessages}
+          myRole={effectiveRole ?? identity.role}
+          onSend={handleSendChat}
+        />
       </div>
       </ExcelChrome>
 
-      <ChatPanel
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        messages={chatMessages}
-        myRole={identity.role}
-        onSend={handleSendChat}
-      />
+      {opponentPickerOpen && effectiveRole === "host" && (
+        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center px-4">
+          <div className="bg-white rounded-sm shadow-lg w-[384px] px-5 py-4">
+            <p className="text-[13px] font-semibold text-[#333]">게임 상대 선택</p>
+            <p className="text-[11px] text-[#666] mt-1">이번 게임에서 대국할 참여자를 선택하세요.</p>
+            <div className="flex flex-col gap-2 mt-4">
+              {getGameCandidates(room).map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => handleStartGame(candidate.id)}
+                  disabled={startingGame}
+                  className="flex items-center justify-between border border-[#c8c8c8] rounded-sm px-3 py-2 text-left text-[12px] hover:bg-[#f0f7f3] disabled:opacity-60"
+                >
+                  <span>{candidate.name}</span>
+                  <span className="text-[10px] text-[#777]">{candidate.role === "guest" ? "참여자" : "옵저버"}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => setOpponentPickerOpen(false)}
+                className="text-[12px] px-3 py-1.5 rounded-sm border border-[#c8c8c8] hover:bg-[#f5f5f5]"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {incomingUndoFrom && (
         <div className="fixed top-16 right-3 z-[95] bg-white border border-[#d0d0d0] rounded-sm shadow-md px-3 py-2.5 w-72 text-[12px]">
@@ -640,7 +757,7 @@ export default function RoomClient({ code }: { code: string }) {
 
       {leaveConfirmOpen && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center px-4">
-          <div className="bg-white rounded-sm shadow-lg w-full max-w-sm px-5 py-4">
+          <div className="bg-white rounded-sm shadow-lg w-[384px] px-5 py-4">
             <p className="text-[13px] text-[#333] leading-relaxed">
               게임이 진행 중입니다. 지금 나가시면 패배 처리됩니다. 나가시겠습니까?
             </p>

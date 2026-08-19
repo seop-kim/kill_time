@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, PlayerRole } from "@/lib/rooms";
+import type { ChatMessage, ParticipantRole } from "@/lib/rooms";
 
 function CIcon({ children, size = 15 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -49,13 +49,6 @@ const MoreIcon = () => (
     <circle cx="13" cy="8" r="1.3" fill="#616161" />
   </svg>
 );
-const PlusIcon = () => (
-  <CIcon size={16}>
-    <line x1="8" y1="3.5" x2="8" y2="12.5" />
-    <line x1="3.5" y1="8" x2="12.5" y2="8" />
-  </CIcon>
-);
-
 export function ChatPanel({
   open,
   onClose,
@@ -66,7 +59,7 @@ export function ChatPanel({
   open: boolean;
   onClose: () => void;
   messages: ChatMessage[];
-  myRole: PlayerRole;
+  myRole: ParticipantRole;
   onSend: (text: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -86,7 +79,7 @@ export function ChatPanel({
   }
 
   return (
-    <div className="fixed right-0 top-0 bottom-0 w-[320px] shadow-2xl z-[90] flex flex-col bg-[#fbfbfd] font-sheet">
+    <div className="absolute right-0 top-0 bottom-0 w-[320px] shadow-2xl z-[90] flex flex-col bg-[#fbfbfd] font-sheet">
       {/* title bar */}
       <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
         <span className="text-[14px] font-semibold text-[#1b1b1b]">Copilot</span>
@@ -160,9 +153,13 @@ export function ChatPanel({
             placeholder="Copilot에 메시지 보내기"
             className="w-full outline-none text-[13px] text-[#1b1b1b] placeholder:text-[#8a8a8e] bg-transparent"
           />
-          <div className="flex items-center justify-between pt-1.5">
-            <button onClick={handleSend} className="text-[#616161] hover:text-[#1b1b1b]">
-              <PlusIcon />
+          <div className="flex items-center justify-end pt-1.5">
+            <button
+              type="button"
+              onClick={handleSend}
+              className="bg-[#0f6cbd] hover:bg-[#0b5a9f] text-white text-[12px] rounded-[4px] px-3 py-1"
+            >
+              보내기
             </button>
           </div>
         </div>
