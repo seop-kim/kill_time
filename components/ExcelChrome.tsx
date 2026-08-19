@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const RIBBON_TABS = ["파일", "홈", "삽입", "페이지 레이아웃", "수식", "데이터", "검토", "보기", "자동화", "도움말", "그리기"];
 
@@ -378,6 +379,7 @@ export interface ChromeAvatar {
   name: string;
   color: string;
   isTurn: boolean;
+  online?: boolean;
 }
 
 export interface GameTab {
@@ -399,6 +401,10 @@ export function ExcelChrome({
   onRematch,
   onRestart,
   onLeave,
+  timerSeconds,
+  onOpenChat,
+  onRequestUndo,
+  onRequestDraw,
   children,
 }: {
   fileName: string;
@@ -411,9 +417,30 @@ export function ExcelChrome({
   onRematch?: () => void;
   onRestart?: () => void;
   onLeave?: () => void;
+  timerSeconds?: number | null;
+  onOpenChat?: () => void;
+  onRequestUndo?: () => void;
+  onRequestDraw?: () => void;
   children: React.ReactNode;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [addinsOpen, setAddinsOpen] = useState(false);
+  const [avatarTooltip, setAvatarTooltip] = useState(false);
+
+  // The add-ins button lives inside the ribbon toolbar row, which has
+  // overflow-x-auto — per the CSS overflow spec that implicitly makes
+  // overflow-y auto too, so a dropdown nested inside it gets clipped/scrolled
+  // instead of opening freely. Portal it to <body> as a fixed-position panel
+  // anchored to the button's real screen position instead.
+  const addinsButtonRef = useRef<HTMLButtonElement>(null);
+  const [addinsPos, setAddinsPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (addinsOpen && addinsButtonRef.current) {
+      const rect = addinsButtonRef.current.getBoundingClientRect();
+      setAddinsPos({ top: rect.bottom + 6, left: rect.right - 200 });
+    }
+  }, [addinsOpen]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden text-[#333]" style={zoomStyle}>
@@ -503,17 +530,43 @@ export function ExcelChrome({
           </div>
 
           <div className="flex items-center gap-1 text-[10px] text-[#555]">
-            <div className="flex items-center -space-x-1.5 mr-1">
+            {typeof timerSeconds === "number" && (
+              <span
+                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm mr-1 tabular-nums ${
+                  timerSeconds <= 10 ? "text-[#c0392b] bg-[#fdecea]" : "text-[#555] bg-[#f0f0f0]"
+                }`}
+              >
+                {timerSeconds}s
+              </span>
+            )}
+            <div
+              className="relative flex items-center -space-x-1.5 mr-1"
+              onMouseEnter={() => setAvatarTooltip(true)}
+              onMouseLeave={() => setAvatarTooltip(false)}
+            >
               {avatars.map((a) => (
                 <div
                   key={a.name}
-                  title={a.name}
                   className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] leading-none font-bold text-white ring-2 ring-white"
                   style={{ background: a.color, boxShadow: a.isTurn ? "0 0 0 2px #e4693f" : undefined }}
                 >
                   <span className="translate-y-[0.5px]">{a.name.slice(0, 1)}</span>
                 </div>
               ))}
+              {avatarTooltip && (
+                <div className="absolute right-0 top-[22px] z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 px-2 w-[150px] text-[10px] text-[#333]">
+                  <div className="text-[9px] text-[#999] px-1 pb-1">현재 참여자</div>
+                  {avatars.map((a) => (
+                    <div key={a.name} className="flex items-center gap-1.5 px-1 py-0.5">
+                      <span
+                        className="w-[7px] h-[7px] rounded-full shrink-0"
+                        style={{ background: a.online === false ? "#bbb" : "#3aa757" }}
+                      />
+                      <span className="truncate">{a.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <TopBtn icon={<CommentIcon />} label="메모" />
             <TopBtn icon={<HistoryIcon />} label="따라잡기" />
@@ -690,9 +743,62 @@ export function ExcelChrome({
               <Chevron />
             </span>
           </div>
-          <div className="flex flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] px-1">
-            <AddinsIcon />
-            추가 기능
+          <div className="relative flex flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] px-1">
+            <button
+              ref={addinsButtonRef}
+              onClick={() => setAddinsOpen((v) => !v)}
+              className="flex flex-col items-center gap-0.5 hover:bg-[#e8e8e8] rounded-[2px] px-1"
+            >
+              <AddinsIcon />
+              추가 기능
+            </button>
+            {addinsOpen &&
+              addinsPos &&
+              (onOpenChat || onRequestUndo || onRequestDraw) &&
+              createPortal(
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setAddinsOpen(false)} />
+                  <div
+                    className="fixed z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 w-[200px] text-[15px] text-[#333] text-left"
+                    style={{ top: addinsPos.top, left: addinsPos.left }}
+                  >
+                    {onOpenChat && (
+                      <button
+                        onClick={() => {
+                          setAddinsOpen(false);
+                          onOpenChat();
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+                      >
+                        채팅
+                      </button>
+                    )}
+                    {onRequestUndo && (
+                      <button
+                        onClick={() => {
+                          setAddinsOpen(false);
+                          onRequestUndo();
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+                      >
+                        한 수 무르기
+                      </button>
+                    )}
+                    {onRequestDraw && (
+                      <button
+                        onClick={() => {
+                          setAddinsOpen(false);
+                          onRequestDraw();
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+                      >
+                        무승부 요청
+                      </button>
+                    )}
+                  </div>
+                </>,
+                document.body,
+              )}
           </div>
         </div>
       </div>

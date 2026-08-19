@@ -13,6 +13,7 @@ interface ToastItem {
 type ShowToast = (message: string, variant?: ToastVariant) => void;
 
 const ToastContext = createContext<ShowToast | null>(null);
+const MAX_TOASTS = 4;
 
 const VARIANT_STYLE: Record<ToastVariant, { border: string; icon: string }> = {
   info: { border: "#217346", icon: "ℹ" },
@@ -25,7 +26,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const showToast = useCallback<ShowToast>((message, variant = "info") => {
     const id = nextId.current++;
-    setToasts((prev) => [...prev, { id, message, variant }]);
+    setToasts((prev) => [...prev, { id, message, variant }].slice(-MAX_TOASTS));
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3200);
