@@ -54,7 +54,7 @@ export default function Home() {
         );
         return;
       }
-      saveIdentity(code, { role: result.role, name: name.trim() });
+      saveIdentity(code, { role: result.role, name: name.trim(), participantId: result.participantId });
       router.push(`/room/${code}`);
     } catch {
       showToast("문서를 여는 중 문제가 발생했습니다.", "error");
@@ -65,7 +65,7 @@ export default function Home() {
 
   return (
     <div className="flex-1 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm bg-white border border-[#d0d0d0] rounded-sm shadow-sm">
+      <div className="w-[384px] bg-white border border-[#d0d0d0] rounded-sm shadow-sm">
         <div className="border-b border-[#e0e0e0] px-5 py-3">
           <h1 className="text-[15px] font-semibold text-[#333]">문서 액세스</h1>
         </div>
