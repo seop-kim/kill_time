@@ -22,7 +22,18 @@
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
+
+# IDE
+.idea/
+.vscode/
+
+# brainstorming companion scratch files
+.superpowers/
+
+# claude code local tooling config
+.claude/
 
 # debug
 npm-debug.log*
