@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { GameStats } from "@/lib/stats";
+import type { MatchParticipant } from "@/lib/rooms";
 
 const RIBBON_TABS = ["파일", "홈", "삽입", "페이지 레이아웃", "수식", "데이터", "검토", "보기", "자동화", "도움말", "그리기"];
 
@@ -453,20 +455,113 @@ export function ParticipantList({ participants }: { participants: ParticipantGro
   );
 }
 
+export function MatchParticipationPanel({
+  participants,
+  requests,
+  myParticipantId,
+  onToggle,
+}: {
+  participants: MatchParticipant[];
+  requests: string[];
+  myParticipantId: string;
+  onToggle: (participate: boolean) => void;
+}) {
+  const requested = requests.includes(myParticipantId);
+  const requestSet = new Set(requests);
+
+  return (
+    <div className="w-[250px] rounded-sm border border-[#d0d0d0] bg-white p-2.5 text-[11px] text-[#333] shadow-md">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold">대진 참여</span>
+        <span className="text-[10px] text-[#777]">{requests.length}/2명</span>
+      </div>
+      <p className="mt-1 text-[10px] text-[#777]">대국할 분은 손을 들어 주세요.</p>
+      <div className="mt-2 flex flex-col gap-1">
+        {participants.map((participant) => (
+          <div key={participant.id} className="flex items-center justify-between rounded-sm bg-[#f7f7f7] px-2 py-1">
+            <span className="truncate">{participant.name}</span>
+            {requestSet.has(participant.id) && <span aria-label="대진 참여 중">✋</span>}
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onToggle(!requested)}
+        className={`mt-2 w-full rounded-sm px-2 py-1.5 text-[11px] text-white ${
+          requested ? "bg-[#777] hover:bg-[#666]" : "bg-[#217346] hover:bg-[#1a5c38]"
+        }`}
+      >
+        {requested ? "대진 참여 취소" : "대진 참여"}
+      </button>
+    </div>
+  );
+}
+
 export interface GameTab {
   id: string;
   label: string;
   available: boolean;
 }
 
+export function ProfileStatsDropdown({
+  name,
+  games,
+  stats,
+  onClose,
+}: {
+  name: string;
+  games: GameTab[];
+  stats: Record<string, GameStats>;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-label="프로필 전적"
+      className="absolute right-0 top-[31px] z-50 w-[240px] rounded-sm border border-[#d0d0d0] bg-white p-2.5 text-[11px] text-[#333] shadow-md"
+    >
+      <div className="border-b border-[#ededed] pb-2 text-[12px] font-semibold">{name}님의 전적</div>
+      <div className="mt-1.5 flex flex-col gap-1">
+        {games.map((game) => {
+          const record = stats[game.id] ?? { played: 0, wins: 0, losses: 0, draws: 0 };
+          const isGirin = game.id === "girin";
+          return (
+            <div key={game.id} className="flex items-center justify-between rounded-sm px-1 py-1 hover:bg-[#f7f7f7]">
+              <span className="font-medium">{game.label}</span>
+              {isGirin ? (
+                <span className="text-[10px] text-[#666]">
+                  {record.totalQuizzes ?? record.played}퀴즈 {record.correctAnswers ?? record.wins}정답 {record.stumped ?? record.losses}출제 성공
+                </span>
+              ) : (
+                <span className="text-[10px] text-[#666]">
+                  {record.played}전 {record.wins}승 {record.losses}패 {record.draws}무
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="mt-2 w-full rounded-sm border border-[#c8c8c8] px-2 py-1 text-[10px] hover:bg-[#f5f5f5]"
+      >
+        닫기
+      </button>
+    </div>
+  );
+}
+
 const zoomStyle = { zoom: 1.5 } as React.CSSProperties;
 
 export function SettingsDropdown({
   onStartGame,
+  startLabel = "게임 시작",
   onRestart,
   onLeave,
 }: {
   onStartGame?: () => void;
+  startLabel?: string;
   onRestart?: () => void;
   onLeave?: () => void;
 }) {
@@ -474,7 +569,7 @@ export function SettingsDropdown({
     <div className="absolute right-0 top-[26px] z-50 flex flex-col items-stretch bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1 w-[140px] text-[11px] text-[#333]">
       {onStartGame && (
         <button onClick={onStartGame} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
-          게임 시작
+          {startLabel}
         </button>
       )}
       {onRestart && (
@@ -495,18 +590,24 @@ export function StartGameConfirmDialog({
   open,
   onConfirm,
   onCancel,
+  title = "게임을 시작하시겠습니까?",
+  description = "게임을 시작하면 참여자 중 대국 상대가 결정됩니다.",
+  confirmLabel = "시작",
 }: {
   open: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
 }) {
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
       <div className="w-[360px] rounded-sm bg-white px-5 py-4 shadow-lg">
-        <p className="text-[14px] font-semibold text-[#333]">게임을 시작하시겠습니까?</p>
-        <p className="mt-1 text-[11px] text-[#666]">게임을 시작하면 참여자 중 대국 상대가 결정됩니다.</p>
+        <p className="text-[14px] font-semibold text-[#333]">{title}</p>
+        <p className="mt-1 text-[11px] text-[#666]">{description}</p>
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
@@ -520,7 +621,7 @@ export function StartGameConfirmDialog({
             onClick={onConfirm}
             className="rounded-sm bg-[#217346] px-3 py-1.5 text-[12px] text-white hover:bg-[#1a5c38]"
           >
-            시작
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -602,6 +703,8 @@ export function AddinsMenuItems({
 export function ExcelChrome({
   fileName,
   avatars,
+  profileAvatar,
+  profileStats,
   participants,
   statusLabel = "편집 중",
   onStatusClick,
@@ -613,6 +716,7 @@ export function ExcelChrome({
   rematchLabel,
   onRematch,
   onStartGame,
+  startActionLabel = "게임 시작",
   onRestart,
   onLeave,
   timerSeconds,
@@ -623,6 +727,8 @@ export function ExcelChrome({
 }: {
   fileName: string;
   avatars: ChromeAvatar[];
+  profileAvatar?: ChromeAvatar;
+  profileStats?: Record<string, GameStats>;
   participants?: ParticipantGroups;
   statusLabel?: string;
   onStatusClick?: () => void;
@@ -634,6 +740,7 @@ export function ExcelChrome({
   rematchLabel?: string;
   onRematch?: () => void;
   onStartGame?: () => void;
+  startActionLabel?: string;
   onRestart?: () => void;
   onLeave?: () => void;
   timerSeconds?: number | null;
@@ -646,6 +753,7 @@ export function ExcelChrome({
   const [shareOpen, setShareOpen] = useState(false);
   const [addinsOpen, setAddinsOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // The add-ins button lives inside the fixed-width ribbon toolbar row, which
   // clips overflow, so a dropdown nested inside it gets clipped instead of
@@ -660,6 +768,8 @@ export function ExcelChrome({
       setAddinsPos({ top: rect.bottom + 6, left: rect.right - 200 });
     }
   }, [addinsOpen]);
+
+  const profile = profileAvatar ?? avatars[0];
 
   return (
     <div
@@ -710,6 +820,7 @@ export function ExcelChrome({
                         }
                       : undefined
                   }
+                  startLabel={startActionLabel}
                   onRestart={
                     onRestart
                       ? () => {
@@ -730,12 +841,29 @@ export function ExcelChrome({
               </>
             )}
           </div>
-          {avatars[0] && (
-            <div
-              className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] leading-none font-bold text-white shrink-0"
-              style={{ background: avatars[0].color }}
-            >
-              <span className="translate-y-[0.5px]">{avatars[0].name.slice(0, 1)}</span>
+          {profile && (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                aria-label="프로필 보기"
+                aria-expanded={profileOpen}
+                onClick={() => setProfileOpen((v) => !v)}
+                className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] leading-none font-bold text-white hover:opacity-85"
+                style={{ background: profile.color }}
+              >
+                <span className="translate-y-[0.5px]">{profile.name.slice(0, 1)}</span>
+              </button>
+              {profileOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
+                  <ProfileStatsDropdown
+                    name={profile.name}
+                    games={games}
+                    stats={profileStats ?? {}}
+                    onClose={() => setProfileOpen(false)}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>

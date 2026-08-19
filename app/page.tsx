@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH } from "@/lib/rooms";
-import { saveIdentity } from "@/lib/identity";
+import { getOrCreateUserId, saveIdentity } from "@/lib/identity";
 import { useToast } from "@/components/Toast";
 import { DocumentJoinDialog, HomeAccessCard } from "@/components/HomeAccess";
 
@@ -30,7 +30,7 @@ export default function Home() {
     setBusy(true);
     try {
       const code = await createRoom(name.trim());
-      saveIdentity(code, { role: "host", name: name.trim() });
+      saveIdentity(code, { role: "host", name: name.trim(), userId: getOrCreateUserId() });
       router.push(`/room/${code}`);
     } catch {
       showToast("문서를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
@@ -56,7 +56,12 @@ export default function Home() {
         );
         return;
       }
-      saveIdentity(code, { role: result.role, name: name.trim(), participantId: result.participantId });
+      saveIdentity(code, {
+        role: result.role,
+        name: name.trim(),
+        participantId: result.participantId,
+        userId: getOrCreateUserId(),
+      });
       setJoinOpen(false);
       router.push(`/room/${code}`);
     } catch {

@@ -57,6 +57,31 @@ export const MIN_CHAT_WIDTH = 260;
 export const MAX_CHAT_WIDTH = 480;
 export const DEFAULT_CHAT_WIDTH = 320;
 
+export interface ChatUserColor {
+  accent: string;
+  surface: string;
+}
+
+const CHAT_USER_COLORS: ChatUserColor[] = [
+  { accent: "#7b3fe4", surface: "#f1ebff" },
+  { accent: "#0f6cbd", surface: "#e9f2fc" },
+  { accent: "#e4693f", surface: "#fff0eb" },
+  { accent: "#1b8a3d", surface: "#eaf7ee" },
+  { accent: "#b05a00", surface: "#fff4e5" },
+  { accent: "#c23b8b", surface: "#fceaf5" },
+];
+
+export function getChatUserColor(
+  message: Pick<ChatMessage, "by" | "name" | "participantId">,
+): ChatUserColor {
+  const key = message.participantId ?? `${message.by}:${message.name}`;
+  let hash = 0;
+  for (const character of key) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  return CHAT_USER_COLORS[hash % CHAT_USER_COLORS.length];
+}
+
 export function normalizeChatTextSize(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_CHAT_TEXT_SIZE;
   return Math.min(MAX_CHAT_TEXT_SIZE, Math.max(MIN_CHAT_TEXT_SIZE, Math.round(value)));
@@ -277,12 +302,17 @@ export function ChatPanel({
             </p>
           </div>
         )}
-        {messages.map((m, i) =>
-          m.by === myRole ? (
+        {messages.map((m, i) => {
+          const userColor = getChatUserColor(m);
+          return m.by === myRole ? (
             <div key={i} className="flex flex-col items-end">
               <span
-                className="rounded-2xl px-3 py-2 max-w-[240px] break-words bg-[#e9eef6] text-[#1b1b1b]"
-                style={{ fontSize: `${textSize}px` }}
+                className="rounded-2xl px-3 py-2 max-w-[240px] break-words text-[#1b1b1b]"
+                style={{
+                  fontSize: `${textSize}px`,
+                  backgroundColor: userColor.surface,
+                  border: `1px solid ${userColor.accent}55`,
+                }}
               >
                 {m.text}
               </span>
@@ -290,20 +320,25 @@ export function ChatPanel({
           ) : (
             <div key={i} className="flex flex-col items-start">
               <span
-                className="text-[#8a8a8e] mb-0.5"
-                style={{ fontSize: `${Math.max(textSize - 3, 9)}px` }}
+                className="mb-0.5 font-semibold"
+                style={{ fontSize: `${Math.max(textSize - 3, 9)}px`, color: userColor.accent }}
               >
                 {m.name}
               </span>
               <span
-                className="text-[#1b1b1b] max-w-[250px] break-words leading-relaxed"
-                style={{ fontSize: `${textSize}px` }}
+                className="max-w-[250px] break-words rounded-r-xl px-2 py-1.5 leading-relaxed"
+                style={{
+                  fontSize: `${textSize}px`,
+                  color: userColor.accent,
+                  backgroundColor: userColor.surface,
+                  borderLeft: `3px solid ${userColor.accent}`,
+                }}
               >
                 {m.text}
               </span>
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
 
       {/* input */}

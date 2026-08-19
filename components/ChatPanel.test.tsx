@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ChatPanel, TextSizeMenu, normalizeChatTextSize, normalizeChatWidth } from "./ChatPanel";
+import {
+  ChatPanel,
+  TextSizeMenu,
+  getChatUserColor,
+  normalizeChatTextSize,
+  normalizeChatWidth,
+} from "./ChatPanel";
 
 describe("ChatPanel", () => {
   it("shows an explicit send button for chat messages", () => {
@@ -83,5 +89,35 @@ describe("ChatPanel", () => {
     expect(markup).toContain('aria-label="채팅창 너비 조절"');
     expect(markup).toContain('aria-valuenow="320"');
     expect(markup).toContain("cursor-ew-resize");
+  });
+
+  it("uses stable distinct colors for different chat users", () => {
+    const first = getChatUserColor({ by: "host", participantId: "user-1", name: "같은 이름" });
+    const firstAgain = getChatUserColor({ by: "host", participantId: "user-1", name: "같은 이름" });
+    const second = getChatUserColor({ by: "guest", participantId: "user-2", name: "같은 이름" });
+
+    expect(first).toEqual(firstAgain);
+    expect(first).not.toEqual(second);
+  });
+
+  it("applies user colors to chat messages", () => {
+    const hostColor = getChatUserColor({ by: "host", participantId: "host-id", name: "Host" });
+    const guestColor = getChatUserColor({ by: "guest", participantId: "guest-id", name: "Guest" });
+    const markup = renderToStaticMarkup(
+      <ChatPanel
+        open
+        messages={[
+          { by: "host", participantId: "host-id", name: "Host", text: "안녕", at: 1 },
+          { by: "guest", participantId: "guest-id", name: "Guest", text: "반가워", at: 2 },
+        ]}
+        myRole="host"
+        onClose={() => {}}
+        onSend={() => {}}
+      />,
+    );
+
+    expect(markup).toContain(hostColor.accent);
+    expect(markup).toContain(hostColor.surface);
+    expect(markup).toContain(guestColor.accent);
   });
 });
