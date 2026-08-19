@@ -142,7 +142,7 @@ function AddinsIcon() {
 }
 
 const RIBBON_ACTION_CLASS =
-  "flex h-[42px] w-[58px] flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] hover:bg-[#e8e8e8] rounded-[2px] px-1";
+  "flex h-[42px] w-[44px] flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] hover:bg-[#e8e8e8] rounded-[2px] px-1";
 
 function CopilotIcon() {
   return <Image src="/copilot-icon.png" alt="" width={14} height={14} priority className="shrink-0 object-contain" />;
@@ -1021,7 +1021,7 @@ export function ExcelChrome({
         </div>
 
         {/* row 3: ribbon toolbar */}
-        <div className="flex items-stretch px-2 py-1 border-b border-[#d0d0d0] bg-gradient-to-b from-white to-[#f3f2f1] overflow-hidden whitespace-nowrap">
+        <div className="flex items-stretch px-1 py-1 border-b border-[#d0d0d0] bg-gradient-to-b from-white to-[#f3f2f1] overflow-hidden whitespace-nowrap">
           <div className="flex flex-col items-center gap-1 pr-1.5">
             <div className="flex items-center gap-1">
               <MiniBtn>

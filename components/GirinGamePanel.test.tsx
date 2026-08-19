@@ -17,7 +17,7 @@ const baseGame: GirinGame = {
 };
 
 describe("GirinGamePanel", () => {
-  it("uses the spreadsheet cell grid without a separate game title", () => {
+  it("uses bordered spreadsheet areas without merged cells or a participant panel", () => {
     const markup = renderToStaticMarkup(
       <GirinGamePanel
         game={baseGame}
@@ -29,7 +29,11 @@ describe("GirinGamePanel", () => {
     );
 
     expect(markup).toContain('data-girin-grid="true"');
-    expect(markup).toContain('data-merged-cell="girin-content"');
+    expect(markup).toContain('data-girin-area="drawing"');
+    expect(markup).toContain('data-girin-area="status"');
+    expect(markup).not.toContain("data-merged-cell");
+    expect(markup).not.toContain("참여 순서");
+    expect(markup).not.toContain("문제 입력");
     expect(markup).not.toContain("내가 그린 기린 그림");
   });
 
@@ -52,7 +56,7 @@ describe("GirinGamePanel", () => {
       />,
     );
 
-    expect(markup).toContain("문제 입력");
+    expect(markup).toContain("정답 단어");
     expect(markup).toContain("최대 8자");
     expect(markup).toContain("1번");
   });
