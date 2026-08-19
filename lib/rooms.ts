@@ -106,6 +106,13 @@ export async function placeStone(
   });
 }
 
+export async function forfeit(code: string, winner: Stone): Promise<void> {
+  await update(roomRef(code), {
+    status: "finished",
+    winner,
+  });
+}
+
 export async function rematch(code: string, currentBlackPlayer: PlayerRole): Promise<void> {
   const nextBlack: PlayerRole = currentBlackPlayer === "host" ? "guest" : "host";
   await update(roomRef(code), {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { onValue, ref } from "firebase/database";
 import { getDb } from "@/lib/firebase";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/gomoku";
 import { columnLabel } from "@/lib/columnLabel";
 import {
+  forfeit,
   joinRoom,
   placeStone,
   rematch,
@@ -23,12 +25,19 @@ import {
 } from "@/lib/rooms";
 import { loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import { useToast } from "@/components/Toast";
+import { ExcelChrome, type ChromeAvatar, type GameTab } from "@/components/ExcelChrome";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
 const ROWS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
 const CELL_W = 26;
 const CELL_H = 22;
 const HEADER_W = 40;
+
+const GAMES: GameTab[] = [
+  { id: "omok", label: "Omok", available: true },
+  { id: "baseball", label: "Baseball", available: false },
+  { id: "janggi", label: "Janggi", available: false },
+];
 
 function colorOf(role: PlayerRole, room: Room): Stone {
   return room.blackPlayer === role ? "black" : "white";
@@ -38,12 +47,9 @@ function nameOfColor(color: Stone, room: Room): string | undefined {
   return colorOf("host", room) === color ? room.host.name : room.guest?.name;
 }
 
-function initials(name: string): string {
-  return name.trim().slice(0, 1) || "?";
-}
-
 export default function RoomClient({ code }: { code: string }) {
   const showToast = useToast();
+  const router = useRouter();
 
   const [identity, setIdentity] = useState<StoredIdentity | null | undefined>(undefined);
   const [room, setRoom] = useState<Room | null>(null);
@@ -51,9 +57,12 @@ export default function RoomClient({ code }: { code: string }) {
   const [dbError, setDbError] = useState(false);
   const [joinName, setJoinName] = useState("");
   const [joining, setJoining] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
   const hasConnectedOnceRef = useRef(false);
+  const lastMoveInitRef = useRef(false);
+  const prevLastMoveRef = useRef<Room["lastMove"]>(null);
 
   useEffect(() => {
     // localStorage doesn't exist during SSR, so this can only run after mount.
@@ -104,6 +113,31 @@ export default function RoomClient({ code }: { code: string }) {
     }
     prevStatusRef.current = room.status;
   }, [room, showToast]);
+
+  useEffect(() => {
+    if (!room || !identity) return;
+    const lm = room.lastMove;
+
+    // Skip the first observation (page load / reconnect) so we don't toast a
+    // move that already happened before this player opened the page.
+    if (!lastMoveInitRef.current) {
+      lastMoveInitRef.current = true;
+      prevLastMoveRef.current = lm;
+      return;
+    }
+
+    const prev = prevLastMoveRef.current;
+    const changed = lm && (!prev || prev.row !== lm.row || prev.col !== lm.col);
+    if (changed && lm) {
+      const moverColor: Stone = room.turn === "black" ? "white" : "black";
+      const myColor = colorOf(identity.role, room);
+      if (moverColor !== myColor) {
+        const moverName = nameOfColor(moverColor, room) ?? "상대방";
+        showToast(`${moverName}님이 ${columnLabel(lm.col)}${lm.row + 1} 셀을 입력했습니다.`, "info");
+      }
+    }
+    prevLastMoveRef.current = lm;
+  }, [room, identity, showToast]);
 
   const board = useMemo(() => room?.board ?? {}, [room]);
 
@@ -165,6 +199,13 @@ export default function RoomClient({ code }: { code: string }) {
     }).catch(() => showToast("입력을 저장하지 못했습니다.", "error"));
   }
 
+  function handleSelectGame(id: string) {
+    const game = GAMES.find((g) => g.id === id);
+    if (!game || !game.available) {
+      showToast("준비 중입니다.", "info");
+    }
+  }
+
   async function handleCopyCode() {
     try {
       await navigator.clipboard.writeText(code);
@@ -181,6 +222,37 @@ export default function RoomClient({ code }: { code: string }) {
     } catch {
       showToast("새 버전을 만들지 못했습니다.", "error");
     }
+  }
+
+  function handleRestartClick() {
+    if (!room) return;
+    if (room.status !== "finished") {
+      showToast("게임이 종료된 후 다시 시작할 수 있습니다.", "info");
+      return;
+    }
+    handleRematch();
+  }
+
+  function handleLeaveClick() {
+    if (room?.status === "playing") {
+      setLeaveConfirmOpen(true);
+      return;
+    }
+    router.push("/");
+  }
+
+  async function handleConfirmLeave() {
+    setLeaveConfirmOpen(false);
+    if (room && identity) {
+      const myColor = colorOf(identity.role, room);
+      const opponentColor: Stone = myColor === "black" ? "white" : "black";
+      try {
+        await forfeit(code, opponentColor);
+      } catch {
+        // best effort — still leave even if the forfeit write fails
+      }
+    }
+    router.push("/");
   }
 
   if (identity === undefined || !roomLoaded) {
@@ -235,64 +307,25 @@ export default function RoomClient({ code }: { code: string }) {
   const myColor = colorOf(identity.role, room);
   const cellsDisabled = room.status !== "playing" || room.turn !== myColor;
 
+  const avatars: ChromeAvatar[] = [
+    { name: room.host.name, color: "#7b3fe4", isTurn: hostIsTurn },
+    ...(room.guest ? [{ name: room.guest.name, color: "#e4693f", isTurn: guestIsTurn }] : []),
+  ];
+
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* ribbon */}
-      <div className="border-b border-[#d0d0d0] px-3 pt-1.5">
-        <div className="flex gap-4 text-[11px] text-[#444]">
-          <span className="text-[#185abd] font-semibold border-b-2 border-[#185abd] pb-1">홈</span>
-          <span className="pb-1">삽입</span>
-          <span className="pb-1">페이지 레이아웃</span>
-          <span className="pb-1">수식</span>
-          <span className="pb-1">데이터</span>
-          <span className="pb-1">검토</span>
-        </div>
-      </div>
-
-      {/* toolbar */}
-      <div className="border-b border-[#d0d0d0] px-3 py-1.5 flex items-center justify-between bg-gradient-to-b from-white to-[#f3f2f1]">
-        <div className="flex gap-1.5">
-          {Array.from({ length: 5 }, (_, i) => (
-            <div key={i} className="w-5 h-5 bg-[#e9e9e9] rounded-sm" />
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3">
-          {room.status === "waiting" && (
-            <button
-              onClick={handleCopyCode}
-              className="text-[11px] text-[#555] border border-[#c8c8c8] rounded-sm px-2 py-1 hover:bg-[#f0f0f0]"
-            >
-              문서 ID: {code} · 복사
-            </button>
-          )}
-          <div className="flex items-center gap-1">
-            <div
-              title={room.host.name}
-              className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-              style={{
-                background: "#7b3fe4",
-                boxShadow: hostIsTurn ? "0 0 0 2px #e4693f" : undefined,
-              }}
-            >
-              {initials(room.host.name)}
-            </div>
-            {room.guest && (
-              <div
-                title={room.guest.name}
-                className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                style={{
-                  background: "#e4693f",
-                  boxShadow: guestIsTurn ? "0 0 0 2px #e4693f" : undefined,
-                }}
-              >
-                {initials(room.guest.name)}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
+    <>
+      <ExcelChrome
+        fileName="25-26_업무현황"
+        avatars={avatars}
+        onShare={handleCopyCode}
+        games={GAMES}
+        activeGameId="omok"
+        onSelectGame={handleSelectGame}
+        onRematch={room.status === "finished" ? handleRematch : undefined}
+        rematchLabel="새 버전으로 계속"
+        onRestart={handleRestartClick}
+        onLeave={handleLeaveClick}
+      >
       {/* grid */}
       <div className="flex-1 overflow-auto min-h-0">
         <div
@@ -328,22 +361,32 @@ export default function RoomClient({ code }: { code: string }) {
           ))}
         </div>
       </div>
+      </ExcelChrome>
 
-      {/* sheet tab bar */}
-      <div className="border-t border-[#d0d0d0] px-3 py-1.5 flex items-center justify-between bg-[#f3f2f1]">
-        <span className="bg-white border-t-2 border-[#217346] text-[11px] px-3 py-1 rounded-t-sm">
-          Sheet1
-        </span>
-        {room.status === "finished" && (
-          <button
-            onClick={handleRematch}
-            className="text-[11px] bg-[#217346] hover:bg-[#1a5c38] text-white rounded-sm px-3 py-1"
-          >
-            새 버전으로 계속
-          </button>
-        )}
-      </div>
-    </div>
+      {leaveConfirmOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center px-4">
+          <div className="bg-white rounded-sm shadow-lg w-full max-w-sm px-5 py-4">
+            <p className="text-[13px] text-[#333] leading-relaxed">
+              게임이 진행 중입니다. 지금 나가시면 패배 처리됩니다. 나가시겠습니까?
+            </p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setLeaveConfirmOpen(false)}
+                className="text-[12px] px-3 py-1.5 rounded-sm border border-[#c8c8c8] hover:bg-[#f5f5f5]"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleConfirmLeave}
+                className="text-[12px] px-3 py-1.5 rounded-sm bg-[#c0392b] hover:bg-[#a5301f] text-white"
+              >
+                나가기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
