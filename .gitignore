@@ -32,6 +32,9 @@ Thumbs.db
 # brainstorming companion scratch files
 .superpowers/
 
+# claude code local tooling config
+.claude/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
