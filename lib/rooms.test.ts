@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canRequestUndo, getGameCandidates, type Room } from "./rooms";
+import {
+  canRequestUndo,
+  DISCONNECT_GRACE_MS,
+  getGameCandidates,
+  removeParticipantFromRoom,
+  type Room,
+} from "./rooms";
 
 describe("canRequestUndo", () => {
   it("allows the player whose turn it is to request undoing the opponent's last move", () => {
@@ -49,5 +55,54 @@ describe("canRequestUndo", () => {
       { id: "guest-1", name: "Guest", role: "guest" },
       { id: "spectator-1", name: "Observer", role: "spectator" },
     ]);
+  });
+
+  it("excludes participants whose presence is offline", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      spectators: {
+        "spectator-1": { id: "spectator-1", name: "Offline observer" },
+        "spectator-2": { id: "spectator-2", name: "Online observer" },
+      },
+      presence: { guest: false, spectators: { "spectator-1": false, "spectator-2": true } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(getGameCandidates(room)).toEqual([
+      { id: "spectator-2", name: "Online observer", role: "spectator" },
+    ]);
+  });
+
+  it("removes a leaving guest or observer from the room", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      spectators: { "spectator-1": { id: "spectator-1", name: "Observer" } },
+      presence: { guest: true, spectators: { "spectator-1": true } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    const withoutGuest = removeParticipantFromRoom(room, "guest", "guest-1");
+    expect(withoutGuest.guest).toBeNull();
+    expect(withoutGuest.presence?.guest).toBeUndefined();
+
+    const withoutObserver = removeParticipantFromRoom(room, "spectator", "spectator-1");
+    expect(withoutObserver.spectators).toEqual({});
+    expect(withoutObserver.presence?.spectators).toEqual({});
+  });
+});
+
+describe("disconnect grace period", () => {
+  it("ends a disconnected game after 15 seconds", () => {
+    expect(DISCONNECT_GRACE_MS).toBe(15000);
   });
 });

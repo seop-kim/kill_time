@@ -24,6 +24,7 @@ import {
   forfeit,
   getGameCandidates,
   joinRoom,
+  leaveRoom,
   placeStone,
   rematch,
   requestDraw,
@@ -42,7 +43,12 @@ import {
 } from "@/lib/rooms";
 import { loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import { useToast } from "@/components/Toast";
-import { ExcelChrome, type ChromeAvatar, type GameTab } from "@/components/ExcelChrome";
+import {
+  ExcelChrome,
+  StartGameConfirmDialog,
+  type ChromeAvatar,
+  type GameTab,
+} from "@/components/ExcelChrome";
 import { ChatPanel } from "@/components/ChatPanel";
 import { toggleChatOpen } from "@/lib/chat";
 
@@ -104,6 +110,7 @@ export default function RoomClient({ code }: { code: string }) {
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
   const [showMoveTag, setShowMoveTag] = useState(false);
   const [opponentPickerOpen, setOpponentPickerOpen] = useState(false);
+  const [startConfirmOpen, setStartConfirmOpen] = useState(false);
   const [startingGame, setStartingGame] = useState(false);
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
@@ -287,6 +294,13 @@ export default function RoomClient({ code }: { code: string }) {
   const opponentRole = playerRole ? opposite(playerRole) : null;
   const opponentOnline = opponentRole && room ? room.presence?.[opponentRole] : undefined;
 
+  const disconnectedParticipantKey = JSON.stringify({
+    guestId: room?.guest && room.presence?.guest === false ? room.guest.id ?? "guest" : null,
+    spectatorIds: Object.entries(room?.spectators ?? {})
+      .filter(([id]) => room?.presence?.spectators?.[id] === false)
+      .map(([id]) => id),
+  });
+
   useEffect(() => {
     // Skip the first observation so a room loaded with the opponent already
     // offline doesn't announce a "just now" disconnect that isn't one.
@@ -311,6 +325,27 @@ export default function RoomClient({ code }: { code: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opponentOnline, roomStatus, identity, playerRole, opponentRole, code]);
 
+  useEffect(() => {
+    const disconnected = JSON.parse(disconnectedParticipantKey) as {
+      guestId: string | null;
+      spectatorIds: string[];
+    };
+    if (!disconnected.guestId && disconnected.spectatorIds.length === 0) return undefined;
+
+    const timer = setTimeout(() => {
+      const removals: Promise<void>[] = [];
+      if (disconnected.guestId) {
+        removals.push(leaveRoom(code, "guest", disconnected.guestId));
+      }
+      for (const spectatorId of disconnected.spectatorIds) {
+        removals.push(leaveRoom(code, "spectator", spectatorId));
+      }
+      Promise.all(removals).catch(() => {});
+    }, DISCONNECT_GRACE_MS);
+
+    return () => clearTimeout(timer);
+  }, [code, disconnectedParticipantKey]);
+
   const board = useMemo(() => room?.board ?? {}, [room]);
 
   async function handleJoinAsGuest() {
@@ -334,6 +369,24 @@ export default function RoomClient({ code }: { code: string }) {
     } finally {
       setJoining(false);
     }
+  }
+
+  function requestStartGame() {
+    if (!room || !identity) return;
+    if (effectiveRole !== "host") {
+      showToast("방장만 게임을 시작할 수 있습니다.", "info");
+      return;
+    }
+    if (room.status !== "waiting") {
+      showToast("게임 시작 전 대기 상태에서만 시작할 수 있습니다.", "info");
+      return;
+    }
+    if (startingGame) return;
+    if (getGameCandidates(room).length === 0) {
+      showToast("게임 상대가 없습니다. 참여자를 기다려 주세요.", "info");
+      return;
+    }
+    setStartConfirmOpen(true);
   }
 
   async function handleStartGame(candidateId?: string) {
@@ -369,6 +422,11 @@ export default function RoomClient({ code }: { code: string }) {
     } finally {
       setStartingGame(false);
     }
+  }
+
+  function handleConfirmStartGame() {
+    setStartConfirmOpen(false);
+    void handleStartGame();
   }
 
   function handleCellClick(row: number, col: number) {
@@ -446,6 +504,17 @@ export default function RoomClient({ code }: { code: string }) {
       setLeaveConfirmOpen(true);
       return;
     }
+    leaveRoomAndNavigate();
+  }
+
+  async function leaveRoomAndNavigate() {
+    try {
+      if (identity && effectiveRole) {
+        await leaveRoom(code, effectiveRole, identity.participantId);
+      }
+    } catch {
+      // Leaving the page is still preferable if the cleanup write fails.
+    }
     router.push("/");
   }
 
@@ -460,7 +529,7 @@ export default function RoomClient({ code }: { code: string }) {
         // best effort — still leave even if the forfeit write fails
       }
     }
-    router.push("/");
+    await leaveRoomAndNavigate();
   }
 
   function handleRequestUndo() {
@@ -603,6 +672,8 @@ export default function RoomClient({ code }: { code: string }) {
   const incomingDrawFrom: PlayerRole | null =
     playerRole && room.drawRequest && room.drawRequest !== playerRole ? room.drawRequest : null;
 
+  const canStartGame = room.status === "waiting" && effectiveRole === "host";
+
   function centerGridOnMount(el: HTMLDivElement | null) {
     if (!el || centeredOnceRef.current) return;
     centeredOnceRef.current = true;
@@ -620,14 +691,15 @@ export default function RoomClient({ code }: { code: string }) {
         avatars={avatars}
         participants={{ players: avatars, observers: observerAvatars }}
         statusLabel={room.status === "playing" ? "편집 중" : "대기 중"}
-        onStatusClick={room.status === "playing" ? undefined : () => handleStartGame()}
+        onStatusClick={canStartGame ? requestStartGame : undefined}
         onShare={handleCopyCode}
+        shareCode={code}
         games={GAMES}
         activeGameId="omok"
         onSelectGame={handleSelectGame}
         onRematch={room.status === "finished" && effectiveRole === "host" ? handleRematch : undefined}
         rematchLabel="새 버전으로 계속"
-        onStartGame={room.status === "playing" ? undefined : () => handleStartGame()}
+        onStartGame={canStartGame ? requestStartGame : undefined}
         onRestart={room.status === "finished" && effectiveRole === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
         timerSeconds={timerSeconds}
@@ -682,6 +754,12 @@ export default function RoomClient({ code }: { code: string }) {
         />
       </div>
       </ExcelChrome>
+
+      <StartGameConfirmDialog
+        open={startConfirmOpen}
+        onConfirm={handleConfirmStartGame}
+        onCancel={() => setStartConfirmOpen(false)}
+      />
 
       {opponentPickerOpen && effectiveRole === "host" && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center px-4">

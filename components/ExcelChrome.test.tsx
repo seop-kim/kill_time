@@ -1,6 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AddinsMenuItems, CopilotButton, ExcelChrome, ParticipantList, SettingsDropdown } from "./ExcelChrome";
+import {
+  AddinsMenuItems,
+  CopilotButton,
+  ExcelChrome,
+  ParticipantList,
+  ShareDropdown,
+  SettingsDropdown,
+  StartGameConfirmDialog,
+} from "./ExcelChrome";
 
 describe("ExcelChrome", () => {
   function renderChrome() {
@@ -128,5 +136,58 @@ describe("ExcelChrome", () => {
     expect(participantMarkup).toContain("게임 중");
     expect(participantMarkup).toContain("옵저버");
     expect(participantMarkup).toContain("Observer");
+  });
+
+  it("highlights the waiting status button when it can start a game", () => {
+    const markup = renderToStaticMarkup(
+      <ExcelChrome
+        fileName="test.xlsx"
+        avatars={[]}
+        statusLabel="대기 중"
+        onStatusClick={() => {}}
+        onShare={() => {}}
+        games={[{ id: "omok", label: "Omok", available: true }]}
+        activeGameId="omok"
+        onSelectGame={() => {}}
+      >
+        <div>cell area</div>
+      </ExcelChrome>,
+    );
+
+    expect(markup).toContain("animate-pulse");
+    expect(markup).toContain("bg-[#b7f3c2]");
+  });
+
+  it("shows a confirmation dialog before starting a game", () => {
+    const markup = renderToStaticMarkup(
+      <StartGameConfirmDialog open onConfirm={() => {}} onCancel={() => {}} />,
+    );
+
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain("게임을 시작하시겠습니까?");
+    expect(markup).toContain("시작");
+    expect(markup).toContain("취소");
+  });
+
+  it("hides offline participants from the participant list", () => {
+    const markup = renderToStaticMarkup(
+      <ParticipantList
+        participants={{
+          players: [{ id: "online", name: "Online", color: "#217346", isTurn: false, online: true }],
+          observers: [{ id: "offline", name: "Offline", color: "#777", isTurn: false, online: false }],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Online");
+    expect(markup).not.toContain("Offline");
+  });
+
+  it("shows the current document code and copy action in the share menu", () => {
+    const markup = renderToStaticMarkup(<ShareDropdown code="ABC123" onCopy={() => {}} />);
+
+    expect(markup).toContain("현재 문서 코드");
+    expect(markup).toContain("ABC123");
+    expect(markup).toContain("복사하기");
   });
 });

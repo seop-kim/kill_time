@@ -48,7 +48,7 @@ export interface GameCandidate {
 
 export const ROOM_CODE_LENGTH = 6;
 export const TURN_SECONDS = 30;
-export const DISCONNECT_GRACE_MS = 25000;
+export const DISCONNECT_GRACE_MS = 15000;
 
 // no 0/O/1/I — easy to misread when typed in by hand
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -74,13 +74,43 @@ export function normalizeRoomCode(input: string): string {
 
 export function getGameCandidates(room: Room): GameCandidate[] {
   const candidates: GameCandidate[] = [];
-  if (room.guest) {
+  if (room.guest && room.presence?.guest !== false) {
     candidates.push({ id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" });
   }
   for (const [id, spectator] of Object.entries(room.spectators ?? {})) {
+    if (room.presence?.spectators?.[id] === false) continue;
     candidates.push({ id, name: spectator.name, role: "spectator" });
   }
   return candidates;
+}
+
+export function removeParticipantFromRoom(
+  room: Room,
+  role: ParticipantRole,
+  participantId?: string,
+): Room {
+  const nextRoom: Room = { ...room };
+
+  if (role === "guest") {
+    if (participantId && room.guest?.id && room.guest.id !== participantId) return room;
+    nextRoom.guest = null;
+    if (room.presence) {
+      nextRoom.presence = { ...room.presence };
+      delete nextRoom.presence.guest;
+    }
+    return nextRoom;
+  }
+
+  if (!participantId) return room;
+
+  nextRoom.spectators = { ...(room.spectators ?? {}) };
+  delete nextRoom.spectators[participantId];
+  if (room.presence) {
+    nextRoom.presence = { ...room.presence };
+    nextRoom.presence.spectators = { ...(room.presence.spectators ?? {}) };
+    delete nextRoom.presence.spectators[participantId];
+  }
+  return nextRoom;
 }
 
 function roomRef(code: string) {
@@ -178,6 +208,13 @@ export async function startGame(code: string, candidateId: string): Promise<void
     room.undoRequest = null;
     room.drawRequest = null;
     return room;
+  });
+}
+
+export async function leaveRoom(code: string, role: ParticipantRole, participantId?: string): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room) return room;
+    return removeParticipantFromRoom(room, role, participantId);
   });
 }
 

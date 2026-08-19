@@ -375,14 +375,20 @@ function TopBtn({
   label,
   pill,
   onClick,
+  attention,
 }: {
   icon: React.ReactNode;
   label: string;
   pill?: boolean;
   onClick?: () => void;
+  attention?: boolean;
 }) {
   const className = `flex items-center gap-1 px-1.5 py-1 text-[10px] ${
-    pill ? "border border-[#d8d8d8] rounded-full" : "hover:bg-[#f0f0f0] rounded-[2px]"
+    attention
+      ? "animate-pulse border border-[#2e9d54] rounded-full bg-[#b7f3c2] text-[#146c2d] font-semibold shadow-[0_0_0_2px_rgba(46,157,84,0.12)]"
+      : pill
+        ? "border border-[#d8d8d8] rounded-full"
+        : "hover:bg-[#f0f0f0] rounded-[2px]"
   }`;
 
   if (onClick) {
@@ -417,11 +423,13 @@ export interface ParticipantGroups {
 
 export function ParticipantList({ participants }: { participants: ParticipantGroups }) {
   function renderGroup(label: string, entries: ChromeAvatar[]) {
+    const onlineEntries = entries.filter((entry) => entry.online !== false);
+
     return (
       <>
         <div className="text-[9px] font-semibold text-[#555] px-1 pt-1 pb-0.5">{label}</div>
-        {entries.length > 0 ? (
-          entries.map((a) => (
+        {onlineEntries.length > 0 ? (
+          onlineEntries.map((a) => (
             <div key={a.id ?? a.name} className="flex items-center gap-1.5 px-1 py-0.5">
               <span
                 className="w-[7px] h-[7px] rounded-full shrink-0"
@@ -479,6 +487,61 @@ export function SettingsDropdown({
           방 나가기
         </button>
       )}
+    </div>
+  );
+}
+
+export function StartGameConfirmDialog({
+  open,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+      <div className="w-[360px] rounded-sm bg-white px-5 py-4 shadow-lg">
+        <p className="text-[14px] font-semibold text-[#333]">게임을 시작하시겠습니까?</p>
+        <p className="mt-1 text-[11px] text-[#666]">게임을 시작하면 참여자 중 대국 상대가 결정됩니다.</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-sm border border-[#c8c8c8] px-3 py-1.5 text-[12px] hover:bg-[#f5f5f5]"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-sm bg-[#217346] px-3 py-1.5 text-[12px] text-white hover:bg-[#1a5c38]"
+          >
+            시작
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ShareDropdown({ code, onCopy }: { code: string; onCopy: () => void }) {
+  return (
+    <div className="absolute right-0 top-[28px] z-50 w-[190px] rounded-sm border border-[#d0d0d0] bg-white p-2.5 text-[11px] text-[#333] shadow-md">
+      <div className="pb-1 text-[10px] text-[#777]">현재 문서 코드</div>
+      <div className="rounded-sm border border-[#e0e0e0] bg-[#f7f7f7] px-2 py-1.5 font-mono text-[12px] tracking-[1px]">
+        {code}
+      </div>
+      <button
+        type="button"
+        onClick={onCopy}
+        className="mt-2 w-full rounded-sm bg-[#217346] px-2 py-1.5 text-[11px] text-white hover:bg-[#1a5c38]"
+      >
+        복사하기
+      </button>
     </div>
   );
 }
@@ -543,6 +606,7 @@ export function ExcelChrome({
   statusLabel = "편집 중",
   onStatusClick,
   onShare,
+  shareCode,
   games,
   activeGameId,
   onSelectGame,
@@ -563,6 +627,7 @@ export function ExcelChrome({
   statusLabel?: string;
   onStatusClick?: () => void;
   onShare: () => void;
+  shareCode?: string;
   games: GameTab[];
   activeGameId: string;
   onSelectGame: (id: string) => void;
@@ -578,6 +643,7 @@ export function ExcelChrome({
   children: React.ReactNode;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [addinsOpen, setAddinsOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
 
@@ -732,15 +798,38 @@ export function ExcelChrome({
             </div>
             <TopBtn icon={<CommentIcon />} label="메모" />
             <TopBtn icon={<HistoryIcon />} label="따라잡기" />
-            <TopBtn icon={<PencilIcon />} label={statusLabel} pill onClick={onStatusClick} />
+            <TopBtn
+              icon={<PencilIcon />}
+              label={statusLabel}
+              pill
+              onClick={onStatusClick}
+              attention={statusLabel === "대기 중" && Boolean(onStatusClick)}
+            />
             <TopBtn icon={<ShieldIcon />} label="민감도" />
             <Chevron />
-            <button
-              onClick={onShare}
-              className="bg-[#217346] hover:bg-[#1a5c38] text-white text-[11px] rounded-sm px-2.5 py-1 flex items-center gap-1 ml-1 shrink-0"
-            >
-              공유 <span className="text-[8px]">▾</span>
-            </button>
+            <div className="relative ml-1 shrink-0">
+              <button
+                type="button"
+                aria-label="공유 메뉴"
+                aria-expanded={shareOpen}
+                onClick={() => setShareOpen((isOpen) => !isOpen)}
+                className="bg-[#217346] hover:bg-[#1a5c38] text-white text-[11px] rounded-sm px-2.5 py-1 flex items-center gap-1"
+              >
+                공유 <span className="text-[8px]">▾</span>
+              </button>
+              {shareOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShareOpen(false)} />
+                  <ShareDropdown
+                    code={shareCode ?? "-"}
+                    onCopy={() => {
+                      setShareOpen(false);
+                      onShare();
+                    }}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
 
