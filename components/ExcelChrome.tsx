@@ -410,6 +410,47 @@ function TopBtn({
   );
 }
 
+export const DRAWING_COLORS = [
+  "#222222",
+  "#d13438",
+  "#e4693f",
+  "#f2b705",
+  "#1a7f37",
+  "#217346",
+  "#1e88e5",
+  "#7b3fe4",
+  "#777777",
+];
+
+export const DRAWING_WIDTHS = [1, 2, 4, 6, 8];
+
+export function TextColorPalette({
+  selectedColor,
+  onSelect,
+}: {
+  selectedColor: string;
+  onSelect: (color: string) => void;
+}) {
+  return (
+    <div className="w-[170px] rounded-sm border border-[#d0d0d0] bg-white p-2 shadow-md">
+      <div className="mb-1.5 text-[10px] font-semibold text-[#555]">선색</div>
+      <div className="grid grid-cols-5 gap-1">
+        {DRAWING_COLORS.map((color) => (
+          <button
+            key={color}
+            type="button"
+            aria-label={`선색 ${color}`}
+            title={color}
+            onClick={() => onSelect(color)}
+            className={`h-5 w-5 rounded-sm border ${selectedColor === color ? "border-[#217346] ring-1 ring-[#217346]" : "border-[#c8c8c8]"}`}
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export interface ChromeAvatar {
   id?: string;
   name: string;
@@ -723,6 +764,10 @@ export function ExcelChrome({
   onOpenChat,
   onRequestUndo,
   onRequestDraw,
+  drawingColor = "#c00",
+  onDrawingColorChange,
+  drawingWidth = 4,
+  onDrawingWidthChange,
   children,
 }: {
   fileName: string;
@@ -747,11 +792,16 @@ export function ExcelChrome({
   onOpenChat?: () => void;
   onRequestUndo?: () => void;
   onRequestDraw?: () => void;
+  drawingColor?: string;
+  onDrawingColorChange?: (color: string) => void;
+  drawingWidth?: number;
+  onDrawingWidthChange?: (width: number) => void;
   children: React.ReactNode;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [addinsOpen, setAddinsOpen] = useState(false);
+  const [fontColorOpen, setFontColorOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -761,6 +811,8 @@ export function ExcelChrome({
   // anchored to the button's real screen position instead.
   const addinsButtonRef = useRef<HTMLButtonElement>(null);
   const [addinsPos, setAddinsPos] = useState<{ top: number; left: number } | null>(null);
+  const fontColorButtonRef = useRef<HTMLButtonElement>(null);
+  const [fontColorPos, setFontColorPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (addinsOpen && addinsButtonRef.current) {
@@ -768,6 +820,13 @@ export function ExcelChrome({
       setAddinsPos({ top: rect.bottom + 6, left: rect.right - 200 });
     }
   }, [addinsOpen]);
+
+  useEffect(() => {
+    if (fontColorOpen && fontColorButtonRef.current) {
+      const rect = fontColorButtonRef.current.getBoundingClientRect();
+      setFontColorPos({ top: rect.bottom + 6, left: rect.left });
+    }
+  }, [fontColorOpen]);
 
   const profile = profileAvatar ?? avatars[0];
 
@@ -1023,11 +1082,49 @@ export function ExcelChrome({
                 <div className="w-[8px] h-[2px] bg-[#f2b705]" />
                 <Chevron />
               </MiniBtn>
-              <MiniBtn>
-                <span>가</span>
-                <div className="w-[8px] h-[2px] bg-[#c00]" />
-                <Chevron />
-              </MiniBtn>
+              <div className="relative">
+                <button
+                  type="button"
+                  ref={fontColorButtonRef}
+                  aria-label="선색 선택"
+                  aria-expanded={fontColorOpen}
+                  onClick={() => setFontColorOpen((open) => !open)}
+                  className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center gap-[1px] rounded-[2px] text-[10px] text-[#555] hover:bg-[#e8e8e8]"
+                >
+                  <span style={{ color: drawingColor }}>가</span>
+                  <div className="h-[2px] w-[8px]" style={{ backgroundColor: drawingColor }} />
+                  <Chevron />
+                </button>
+                {fontColorOpen &&
+                  fontColorPos &&
+                  createPortal(
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setFontColorOpen(false)} />
+                      <div className="fixed z-50" style={{ top: fontColorPos.top, left: fontColorPos.left }}>
+                        <TextColorPalette
+                          selectedColor={drawingColor}
+                          onSelect={(color) => {
+                            onDrawingColorChange?.(color);
+                            setFontColorOpen(false);
+                          }}
+                        />
+                      </div>
+                    </>,
+                    document.body,
+                )}
+              </div>
+              <select
+                aria-label="선 굵기"
+                value={drawingWidth}
+                onChange={(event) => onDrawingWidthChange?.(Number(event.target.value))}
+                className="h-[18px] w-[45px] shrink-0 rounded-[2px] border border-[#c8c8c8] bg-white px-0.5 text-[9px] text-[#555] outline-none"
+              >
+                {DRAWING_WIDTHS.map((width) => (
+                  <option key={width} value={width}>
+                    {width}px
+                  </option>
+                ))}
+              </select>
               <MiniBtn>
                 <BorderIcon />
                 <Chevron />

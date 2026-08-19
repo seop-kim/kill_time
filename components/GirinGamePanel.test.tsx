@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { createGirinStroke } from "../lib/girin";
 import { GirinGamePanel } from "./GirinGamePanel";
 import type { GirinGame } from "../lib/girin";
 
@@ -16,6 +17,30 @@ const baseGame: GirinGame = {
 };
 
 describe("GirinGamePanel", () => {
+  it("uses the spreadsheet cell grid without a separate game title", () => {
+    const markup = renderToStaticMarkup(
+      <GirinGamePanel
+        game={baseGame}
+        participantId="u1"
+        onSubmitPrompt={() => {}}
+        onDrawStroke={() => {}}
+        onTimeUp={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('data-girin-grid="true"');
+    expect(markup).toContain('data-merged-cell="girin-content"');
+    expect(markup).not.toContain("내가 그린 기린 그림");
+  });
+
+  it("creates new strokes with the selected drawing color", () => {
+    expect(createGirinStroke([{ x: 1, y: 2 }], "#e51c23")).toEqual({
+      points: [{ x: 1, y: 2 }],
+      color: "#e51c23",
+      width: 4,
+    });
+  });
+
   it("shows the prompt form only to the current numbered questioner", () => {
     const markup = renderToStaticMarkup(
       <GirinGamePanel

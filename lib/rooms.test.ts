@@ -5,6 +5,8 @@ import {
   applyMatchParticipation,
   getMatchParticipants,
   getGameCandidates,
+  normalizeRoomGameId,
+  applyRoomGameSelection,
   removeParticipantFromRoom,
   type Room,
 } from "./rooms";
@@ -156,5 +158,31 @@ describe("match participation", () => {
     expect(matched.matchRequests).toBeUndefined();
     expect(matched.gamePlayers).toEqual({ host, guest });
     expect(matched.gameStartedAt).toEqual(matched.turnStartedAt);
+  });
+});
+
+describe("room game selection", () => {
+  it("keeps known room game ids and falls back to omok for old rooms", () => {
+    expect(normalizeRoomGameId("girin")).toBe("girin");
+    expect(normalizeRoomGameId("legacy-game")).toBe("omok");
+    expect(normalizeRoomGameId(undefined)).toBe("omok");
+  });
+
+  it("changes the shared game selection without replacing room state", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    const selected = applyRoomGameSelection(room, "girin");
+
+    expect(selected.gameId).toBe("girin");
+    expect(selected.host).toEqual(room.host);
+    expect(selected.guest).toEqual(room.guest);
   });
 });

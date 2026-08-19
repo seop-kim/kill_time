@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { applyGameResult, applyGirinQuizResult, type UserStatsProfile } from "./stats";
+import {
+  applyGameResult,
+  applyGirinQuizResult,
+  shouldAttemptStatsRecord,
+  type UserStatsProfile,
+} from "./stats";
 
 function emptyProfile(): UserStatsProfile {
   return { nickname: "Player", games: {}, recordedGames: {} };
@@ -49,5 +54,11 @@ describe("applyGameResult", () => {
     });
 
     expect(profile.games.girin).toMatchObject({ totalQuizzes: 1, correctAnswers: 1, stumped: 0 });
+  });
+
+  it("does not retry the same failed result on every room snapshot", () => {
+    expect(shouldAttemptStatsRecord(null, "girin:room-1:1")).toBe(true);
+    expect(shouldAttemptStatsRecord("girin:room-1:1", "girin:room-1:1")).toBe(false);
+    expect(shouldAttemptStatsRecord("girin:room-1:1", "girin:room-1:2")).toBe(true);
   });
 });

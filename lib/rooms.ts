@@ -5,6 +5,7 @@ import type { GirinGame } from "./girin";
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
+export type RoomGameId = "omok" | "girin";
 
 export interface Player {
   id?: string;
@@ -31,6 +32,8 @@ export interface ChatMessage {
 }
 
 export interface Room {
+  /** The game selected for the entire room. Older rooms default to omok. */
+  gameId?: RoomGameId;
   host: Player;
   guest: Player | null;
   spectators?: Record<string, Spectator>;
@@ -64,6 +67,14 @@ export interface GameCandidate {
 export const ROOM_CODE_LENGTH = 6;
 export const TURN_SECONDS = 30;
 export const DISCONNECT_GRACE_MS = 15000;
+
+export function normalizeRoomGameId(value: unknown): RoomGameId {
+  return value === "girin" ? "girin" : "omok";
+}
+
+export function applyRoomGameSelection(room: Room, gameId: RoomGameId): Room {
+  return { ...room, gameId };
+}
 
 // no 0/O/1/I — easy to misread when typed in by hand
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -196,6 +207,13 @@ function roomRef(code: string) {
   return ref(getDb(), `rooms/${code}`);
 }
 
+export async function setRoomGame(code: string, gameId: RoomGameId): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room) return room;
+    return applyRoomGameSelection(room, gameId);
+  });
+}
+
 export async function createRoom(hostName: string): Promise<string> {
   let code = generateRoomCode();
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -205,6 +223,7 @@ export async function createRoom(hostName: string): Promise<string> {
   }
 
   const room: Room = {
+    gameId: "omok",
     host: { name: hostName },
     guest: null,
     blackPlayer: "host",

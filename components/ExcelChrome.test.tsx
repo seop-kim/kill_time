@@ -88,12 +88,20 @@ describe("ExcelChrome", () => {
         activeGameId="omok"
         onSelectGame={() => {}}
         onOpenChat={() => {}}
+        drawingColor="#e51c23"
+        onDrawingColorChange={() => {}}
+        drawingWidth={6}
+        onDrawingWidthChange={() => {}}
       >
         <div>cell area</div>
       </ExcelChrome>,
     );
 
     expect(markup).toContain("flex items-start gap-1 self-center");
+    expect(markup).toContain('aria-label="선색 선택"');
+    expect(markup).toContain("#e51c23");
+    expect(markup).toContain('aria-label="선 굵기"');
+    expect(markup).toContain("6px");
   });
 
   it("keeps chat out of the Add-ins menu", () => {
@@ -213,7 +221,7 @@ describe("ExcelChrome", () => {
     const markup = renderToStaticMarkup(
       <ProfileStatsDropdown
         name="Host"
-        games={[{ id: "girin", label: "내가 그린 기린 그림", available: true }]}
+        games={[{ id: "girin", label: "girin", available: true }]}
         stats={{ girin: { played: 2, wins: 1, losses: 1, draws: 0, totalQuizzes: 2, correctAnswers: 1, stumped: 1 } }}
         onClose={() => {}}
       />,
