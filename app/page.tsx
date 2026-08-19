@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH } from "@/lib/rooms";
 import { saveIdentity } from "@/lib/identity";
 import { useToast } from "@/components/Toast";
+import { DocumentJoinDialog, HomeAccessCard } from "@/components/HomeAccess";
 
 export default function Home() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function Home() {
 
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
+  const [joinOpen, setJoinOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   function validName(): boolean {
@@ -55,6 +57,7 @@ export default function Home() {
         return;
       }
       saveIdentity(code, { role: result.role, name: name.trim(), participantId: result.participantId });
+      setJoinOpen(false);
       router.push(`/room/${code}`);
     } catch {
       showToast("문서를 여는 중 문제가 발생했습니다.", "error");
@@ -65,57 +68,22 @@ export default function Home() {
 
   return (
     <div className="flex-1 flex items-center justify-center px-4">
-      <div className="w-[384px] bg-white border border-[#d0d0d0] rounded-sm shadow-sm">
-        <div className="border-b border-[#e0e0e0] px-5 py-3">
-          <h1 className="text-[15px] font-semibold text-[#333]">문서 액세스</h1>
-        </div>
-
-        <div className="px-5 py-4 flex flex-col gap-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-[12px] text-[#555]">표시 이름</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={8}
-              placeholder="예: 김철수"
-              className="border border-[#c8c8c8] rounded-sm px-2 py-1.5 text-[13px] outline-none focus:border-[#217346]"
-            />
-          </label>
-
-          <button
-            onClick={handleCreate}
-            disabled={busy}
-            className="bg-[#217346] hover:bg-[#1a5c38] disabled:opacity-60 text-white text-[13px] rounded-sm py-2"
-          >
-            새 문서 만들기
-          </button>
-
-          <div className="flex items-center gap-2 text-[11px] text-[#999]">
-            <div className="flex-1 h-px bg-[#e0e0e0]" />
-            또는
-            <div className="flex-1 h-px bg-[#e0e0e0]" />
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[12px] text-[#555]">문서 ID</span>
-            <input
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value)}
-              maxLength={ROOM_CODE_LENGTH}
-              placeholder="예: AB3XQ2"
-              className="border border-[#c8c8c8] rounded-sm px-2 py-1.5 text-[13px] tracking-widest outline-none focus:border-[#217346] uppercase"
-            />
-          </label>
-
-          <button
-            onClick={handleJoin}
-            disabled={busy}
-            className="border border-[#217346] text-[#217346] hover:bg-[#f0f7f3] disabled:opacity-60 text-[13px] rounded-sm py-2"
-          >
-            문서 열기
-          </button>
-        </div>
-      </div>
+      <HomeAccessCard
+        name={name}
+        busy={busy}
+        onNameChange={setName}
+        onCreate={handleCreate}
+        onOpenJoin={() => setJoinOpen(true)}
+      />
+      <DocumentJoinDialog
+        open={joinOpen}
+        roomCode={roomCode}
+        busy={busy}
+        onChange={setRoomCode}
+        onClose={() => setJoinOpen(false)}
+        onJoin={handleJoin}
+        roomCodeLength={ROOM_CODE_LENGTH}
+      />
     </div>
   );
 }
