@@ -22,7 +22,7 @@ import {
   cancelDrawRequest,
   cancelUndoRequest,
   forfeit,
-  getGameCandidates,
+  getMatchParticipants,
   joinRoom,
   leaveRoom,
   placeStone,
@@ -31,25 +31,39 @@ import {
   requestUndo,
   sendChatMessage,
   skipTurn,
-  startGame,
   subscribeChat,
   subscribeRoom,
+  toggleMatchParticipation,
   DISCONNECT_GRACE_MS,
   TURN_SECONDS,
   type ChatMessage,
+  type MatchParticipant,
   type ParticipantRole,
   type PlayerRole,
   type Room,
 } from "@/lib/rooms";
-import { loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
+import {
+  addGirinStroke,
+  advanceGirinRoundInRoom,
+  resetGirinGame,
+  startGirinGame,
+  submitGirinAnswerToRoom,
+  submitGirinPromptToRoom,
+  type GirinGame,
+  type GirinStroke,
+} from "@/lib/girin";
+import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
+import { recordGameResult, recordGirinQuizResult, subscribeUserStats, type GameStats } from "@/lib/stats";
 import { useToast } from "@/components/Toast";
 import {
   ExcelChrome,
+  MatchParticipationPanel,
   StartGameConfirmDialog,
   type ChromeAvatar,
   type GameTab,
 } from "@/components/ExcelChrome";
 import { ChatPanel } from "@/components/ChatPanel";
+import { GirinGamePanel } from "@/components/GirinGamePanel";
 import { toggleChatOpen } from "@/lib/chat";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
@@ -61,6 +75,7 @@ const MOVE_TAG_MS = 5000;
 
 const GAMES: GameTab[] = [
   { id: "omok", label: "Omok", available: true },
+  { id: "girin", label: "내가 그린 기린 그림", available: true },
   { id: "baseball", label: "Baseball", available: false },
   { id: "janggi", label: "Janggi", available: false },
 ];
@@ -74,14 +89,25 @@ function opposite(role: PlayerRole): PlayerRole {
 }
 
 function nameOfRole(role: PlayerRole, room: Room): string | undefined {
+  if (room.gamePlayers) return room.gamePlayers[role]?.name;
   return role === "host" ? room.host.name : room.guest?.name;
 }
 
 function nameOfColor(color: Stone, room: Room): string | undefined {
-  return colorOf("host", room) === color ? room.host.name : room.guest?.name;
+  return colorOf("host", room) === color ? nameOfRole("host", room) : nameOfRole("guest", room);
+}
+
+function matchesIdentity(identity: StoredIdentity, participant: MatchParticipant): boolean {
+  if (participant.role === "host") return identity.role === "host";
+  return identity.participantId === participant.id;
 }
 
 function effectiveRoleOf(identity: StoredIdentity, room: Room): ParticipantRole {
+  if (room.gamePlayers) {
+    if (matchesIdentity(identity, room.gamePlayers.host)) return "host";
+    if (matchesIdentity(identity, room.gamePlayers.guest)) return "guest";
+    return "spectator";
+  }
   if (identity.role === "host") return "host";
   const guestId = room.guest?.id;
   if (
@@ -92,6 +118,19 @@ function effectiveRoleOf(identity: StoredIdentity, room: Room): ParticipantRole 
     return "guest";
   }
   return "spectator";
+}
+
+function participantForRole(role: PlayerRole, room: Room): MatchParticipant | null {
+  if (room.gamePlayers) return room.gamePlayers[role];
+  if (role === "host") return { id: "host", name: room.host.name, role: "host" };
+  return room.guest ? { id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" } : null;
+}
+
+function participantOnline(room: Room, participant: MatchParticipant | null): boolean | undefined {
+  if (!participant) return undefined;
+  if (participant.role === "host") return room.presence?.host;
+  if (participant.role === "guest") return room.presence?.guest;
+  return room.presence?.spectators?.[participant.id];
 }
 
 export default function RoomClient({ code }: { code: string }) {
@@ -109,11 +148,14 @@ export default function RoomClient({ code }: { code: string }) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
   const [showMoveTag, setShowMoveTag] = useState(false);
-  const [opponentPickerOpen, setOpponentPickerOpen] = useState(false);
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
-  const [startingGame, setStartingGame] = useState(false);
+  const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
+  const [activeGameId, setActiveGameId] = useState("omok");
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
+  const statsRecordedRef = useRef<string | null>(null);
+  const girinQuizRecordedRef = useRef<string | null>(null);
+  const prevGirinStatusRef = useRef<GirinGame["status"] | null>(null);
   const hasConnectedOnceRef = useRef(false);
   const lastMoveInitRef = useRef(false);
   const prevLastMoveRef = useRef<Room["lastMove"]>(null);
@@ -129,9 +171,26 @@ export default function RoomClient({ code }: { code: string }) {
 
   useEffect(() => {
     // localStorage doesn't exist during SSR, so this can only run after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIdentity(loadIdentity(code));
+    const loaded = loadIdentity(code);
+    if (!loaded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIdentity(null);
+      return;
+    }
+    const userId = loaded.userId ?? getOrCreateUserId();
+    const upgraded = { ...loaded, userId };
+    if (loaded.userId !== userId) saveIdentity(code, upgraded);
+    setIdentity(upgraded);
   }, [code]);
+
+  useEffect(() => {
+    if (!identity?.userId) return undefined;
+    try {
+      return subscribeUserStats(identity.userId, (profile) => setProfileStats(profile.games));
+    } catch {
+      return undefined;
+    }
+  }, [identity?.userId]);
 
   useEffect(() => {
     try {
@@ -172,7 +231,7 @@ export default function RoomClient({ code }: { code: string }) {
   useEffect(() => {
     if (!identity || !effectiveRole) return;
     try {
-      return armPresence(code, effectiveRole, identity.participantId);
+      return armPresence(code, identity.role, identity.participantId);
     } catch {
       return undefined;
     }
@@ -189,6 +248,9 @@ export default function RoomClient({ code }: { code: string }) {
 
   useEffect(() => {
     if (!room) return;
+    if (room.status === "playing" && prevStatusRef.current === "waiting") {
+      showToast("대진이 성사되어 게임을 시작했습니다.", "info");
+    }
     if (room.status === "finished" && prevStatusRef.current !== "finished") {
       const winnerName = room.winner && room.winner !== "draw" ? nameOfColor(room.winner, room) : undefined;
       const resultMessage =
@@ -207,6 +269,79 @@ export default function RoomClient({ code }: { code: string }) {
     }
     prevStatusRef.current = room.status;
   }, [room, playerRole, showToast]);
+
+  useEffect(() => {
+    if (room?.status !== "finished") {
+      statsRecordedRef.current = null;
+      return;
+    }
+    if (activeGameId !== "omok") return;
+    if (!room.winner || !playerRole || !identity?.userId) return;
+
+    const gameSessionId = room.gameStartedAt ?? room.turnStartedAt ?? `${room.lastMove?.row ?? "none"}-${room.lastMove?.col ?? "none"}`;
+    const resultId = `omok:${code}:${gameSessionId}`;
+    if (statsRecordedRef.current === resultId) return;
+
+    const result =
+      room.winner === "draw"
+        ? "draw"
+        : colorOf(playerRole, room) === room.winner
+          ? "win"
+          : "loss";
+    statsRecordedRef.current = resultId;
+    recordGameResult(identity.userId, identity.name, "omok", result, resultId).catch(() => {
+      statsRecordedRef.current = null;
+      showToast("전적을 저장하지 못했습니다.", "error");
+    });
+  }, [activeGameId, code, identity, playerRole, room, showToast]);
+
+  useEffect(() => {
+    const game = room?.girinGame;
+    if (!game) {
+      prevGirinStatusRef.current = null;
+      girinQuizRecordedRef.current = null;
+      return;
+    }
+
+    if (game.status === "finished" && prevGirinStatusRef.current !== "finished") {
+      const winnerName = game.winnerId ? game.participants[game.winnerId]?.name : undefined;
+      const winnerMessage =
+        game.lastRoundResult?.outcome === "stumped"
+          ? `${winnerName ?? "출제자"}님이 5분 동안 정답을 내주지 않아 이번 퀴즈에서 승리했습니다.`
+          : `${winnerName ?? "누군가"}님이 정답을 맞혀 이번 퀴즈에서 승리했습니다.`;
+      showToast(
+        game.winnerId ? winnerMessage : "한 사이클이 끝나 게임이 종료되었습니다.",
+        "info",
+        { placement: "top-center", emphasis: true },
+      );
+    }
+    prevGirinStatusRef.current = game.status;
+  }, [room?.girinGame, showToast]);
+
+  useEffect(() => {
+    const game = room?.girinGame;
+    const roundResult = game?.lastRoundResult;
+    if (!game || !roundResult) {
+      girinQuizRecordedRef.current = null;
+      return;
+    }
+    const participantId = identity?.role === "host" ? "host" : identity?.participantId;
+    if (!participantId || !identity?.userId || !game.participants[participantId]) return;
+
+    const gameSessionId = game.startedAt ?? `${code}:${Object.keys(game.participants).sort().join(",")}`;
+    const resultId = `girin:quiz:${code}:${gameSessionId}:${roundResult.round}`;
+    if (girinQuizRecordedRef.current === resultId) return;
+
+    girinQuizRecordedRef.current = resultId;
+    recordGirinQuizResult(identity.userId, identity.name, resultId, {
+      totalQuizzes: 1,
+      correctAnswers: roundResult.outcome === "answered" && roundResult.winnerId === participantId ? 1 : 0,
+      stumped: roundResult.outcome === "stumped" && roundResult.winnerId === participantId ? 1 : 0,
+    }).catch(() => {
+      girinQuizRecordedRef.current = null;
+      showToast("전적을 저장하지 못했습니다.", "error");
+    });
+  }, [code, identity, room?.girinGame, showToast]);
 
   useEffect(() => {
     if (!room || !identity) return;
@@ -292,7 +427,7 @@ export default function RoomClient({ code }: { code: string }) {
 
   // Opponent disconnect → grace period → forfeit in their favor.
   const opponentRole = playerRole ? opposite(playerRole) : null;
-  const opponentOnline = opponentRole && room ? room.presence?.[opponentRole] : undefined;
+  const opponentOnline = opponentRole && room ? participantOnline(room, participantForRole(opponentRole, room)) : undefined;
 
   const disconnectedParticipantKey = JSON.stringify({
     guestId: room?.guest && room.presence?.guest === false ? room.guest.id ?? "guest" : null,
@@ -364,8 +499,9 @@ export default function RoomClient({ code }: { code: string }) {
         );
         return;
       }
-      saveIdentity(code, { role: result.role, name: trimmed, participantId: result.participantId });
-      setIdentity({ role: result.role, name: trimmed, participantId: result.participantId });
+      const userId = getOrCreateUserId();
+      saveIdentity(code, { role: result.role, name: trimmed, participantId: result.participantId, userId });
+      setIdentity({ role: result.role, name: trimmed, participantId: result.participantId, userId });
     } finally {
       setJoining(false);
     }
@@ -373,66 +509,74 @@ export default function RoomClient({ code }: { code: string }) {
 
   function requestStartGame() {
     if (!room || !identity) return;
-    if (effectiveRole !== "host") {
-      showToast("방장만 게임을 시작할 수 있습니다.", "info");
+    if (activeGameId === "girin") {
+      const girinStatus = room.girinGame?.status ?? "waiting";
+      if (girinStatus !== "waiting") {
+        showToast("게임 시작 전 대기 상태에서만 시작할 수 있습니다.", "info");
+        return;
+      }
+      if (identity.role !== "host") {
+        showToast("방장만 게임을 시작할 수 있습니다.", "info");
+        return;
+      }
+      if (getMatchParticipants(room).length < 2) {
+        showToast("두 명 이상 참여해야 게임을 시작할 수 있습니다.", "info");
+        return;
+      }
+      setStartConfirmOpen(true);
       return;
     }
     if (room.status !== "waiting") {
-      showToast("게임 시작 전 대기 상태에서만 시작할 수 있습니다.", "info");
+      showToast("대기 중인 방에서만 대진에 참여할 수 있습니다.", "info");
       return;
     }
-    if (startingGame) return;
-    if (getGameCandidates(room).length === 0) {
-      showToast("게임 상대가 없습니다. 참여자를 기다려 주세요.", "info");
+    const participantId = identity.role === "host" ? "host" : identity.participantId;
+    if (!participantId || !getMatchParticipants(room).some((participant) => participant.id === participantId)) {
+      showToast("현재 방 참여 정보를 확인할 수 없습니다.", "error");
+      return;
+    }
+    if (room.matchRequests?.[participantId]) {
+      toggleMatchParticipation(code, room.matchRequests[participantId], false).catch(() =>
+        showToast("대진 참여를 취소하지 못했습니다.", "error"),
+      );
       return;
     }
     setStartConfirmOpen(true);
   }
 
-  async function handleStartGame(candidateId?: string) {
-    if (!room || !identity) return;
-    if (effectiveRole !== "host") {
-      showToast("방장만 게임을 시작할 수 있습니다.", "info");
-      return;
-    }
-    if (room.status === "playing") {
-      showToast("이미 게임이 진행 중입니다.", "info");
-      return;
-    }
-    if (startingGame) return;
-
-    const candidates = getGameCandidates(room);
-    if (candidates.length === 0) {
-      showToast("게임 상대가 없습니다. 참여자를 기다려 주세요.", "info");
-      return;
-    }
-    const selectedId = candidateId ?? (candidates.length === 1 ? candidates[0].id : null);
-    if (!selectedId) {
-      setOpponentPickerOpen(true);
-      return;
-    }
-
-    setStartingGame(true);
-    try {
-      await startGame(code, selectedId);
-      setOpponentPickerOpen(false);
-      showToast("게임을 시작했습니다.", "info");
-    } catch {
-      showToast("게임을 시작하지 못했습니다.", "error");
-    } finally {
-      setStartingGame(false);
-    }
-  }
-
-  function handleConfirmStartGame() {
+  async function handleConfirmStartGame() {
     setStartConfirmOpen(false);
-    void handleStartGame();
+    if (!room || !identity) return;
+    if (activeGameId === "girin") {
+      if (identity.role !== "host") return;
+      try {
+        await startGirinGame(code, getMatchParticipants(room));
+        showToast("게임을 시작했습니다. 순번이 무작위로 정해졌습니다.", "info");
+      } catch {
+        showToast("게임을 시작하지 못했습니다.", "error");
+      }
+      return;
+    }
+    const participantId = identity.role === "host" ? "host" : identity.participantId;
+    const participant = participantId
+      ? getMatchParticipants(room).find((candidate) => candidate.id === participantId)
+      : undefined;
+    if (!participant) {
+      showToast("현재 방 참여 정보를 확인할 수 없습니다.", "error");
+      return;
+    }
+    try {
+      await toggleMatchParticipation(code, participant, true);
+      showToast("대진 참여 신청을 보냈습니다. 두 명이 모이면 게임이 시작됩니다.", "info");
+    } catch {
+      showToast("대진 참여 신청을 보내지 못했습니다.", "error");
+    }
   }
 
   function handleCellClick(row: number, col: number) {
     if (!room || !playerRole) return;
     if (room.status === "waiting") {
-      showToast("방장이 게임을 시작할 때까지 대기 중입니다.", "info");
+      showToast("대진 참여자 두 명이 모일 때까지 대기 중입니다.", "info");
       return;
     }
     if (room.status === "finished") return;
@@ -468,7 +612,9 @@ export default function RoomClient({ code }: { code: string }) {
     const game = GAMES.find((g) => g.id === id);
     if (!game || !game.available) {
       showToast("준비 중입니다.", "info");
+      return;
     }
+    setActiveGameId(id);
   }
 
   async function handleCopyCode() {
@@ -484,7 +630,6 @@ export default function RoomClient({ code }: { code: string }) {
     if (!room) return;
     try {
       await rematch(code, room.blackPlayer);
-      setOpponentPickerOpen(false);
     } catch {
       showToast("새 버전을 만들지 못했습니다.", "error");
     }
@@ -492,6 +637,14 @@ export default function RoomClient({ code }: { code: string }) {
 
   function handleRestartClick() {
     if (!room) return;
+    if (activeGameId === "girin") {
+      if (room.girinGame?.status !== "finished") {
+        showToast("게임이 종료된 후 다시 시작할 수 있습니다.", "info");
+        return;
+      }
+      resetGirinGame(code).catch(() => showToast("게임을 다시 시작하지 못했습니다.", "error"));
+      return;
+    }
     if (room.status !== "finished") {
       showToast("게임이 종료된 후 다시 시작할 수 있습니다.", "info");
       return;
@@ -500,7 +653,7 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   function handleLeaveClick() {
-    if (room?.status === "playing" && playerRole) {
+    if (activeGameId === "omok" && room?.status === "playing" && playerRole) {
       setLeaveConfirmOpen(true);
       return;
     }
@@ -509,8 +662,8 @@ export default function RoomClient({ code }: { code: string }) {
 
   async function leaveRoomAndNavigate() {
     try {
-      if (identity && effectiveRole) {
-        await leaveRoom(code, effectiveRole, identity.participantId);
+      if (identity) {
+        await leaveRoom(code, identity.role, identity.participantId);
       }
     } catch {
       // Leaving the page is still preferable if the cleanup write fails.
@@ -520,7 +673,7 @@ export default function RoomClient({ code }: { code: string }) {
 
   async function handleConfirmLeave() {
     setLeaveConfirmOpen(false);
-    if (room && playerRole) {
+    if (activeGameId === "omok" && room && playerRole) {
       const myColor = colorOf(playerRole, room);
       const opponentColor: Stone = myColor === "black" ? "white" : "black";
       try {
@@ -533,6 +686,7 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   function handleRequestUndo() {
+    if (activeGameId !== "omok") return;
     if (!room || !playerRole) return;
     if (room.status !== "playing") {
       showToast("게임 진행 중에만 요청할 수 있습니다.", "info");
@@ -555,6 +709,7 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   function handleRequestDraw() {
+    if (activeGameId !== "omok") return;
     if (!room || !playerRole) return;
     if (room.status !== "playing") {
       showToast("게임 진행 중에만 요청할 수 있습니다.", "info");
@@ -595,9 +750,22 @@ export default function RoomClient({ code }: { code: string }) {
 
   function handleSendChat(text: string) {
     if (!identity || !effectiveRole) return;
-    sendChatMessage(code, { by: effectiveRole, name: identity.name, text }).catch(() =>
-      showToast("메모를 보내지 못했습니다.", "error"),
-    );
+    const message = sendChatMessage(code, {
+      by: effectiveRole,
+      participantId: identity.userId ?? identity.participantId,
+      name: identity.name,
+      text,
+    });
+    message
+      .then(() => {
+        const girin = room?.girinGame;
+        const participantId = identity.role === "host" ? "host" : identity.participantId;
+        if (activeGameId === "girin" && girin?.status === "drawing" && participantId) {
+          return submitGirinAnswerToRoom(code, participantId, text);
+        }
+        return undefined;
+      })
+      .catch(() => showToast("메모를 보내지 못했습니다.", "error"));
   }
 
   if (identity === undefined || !roomLoaded) {
@@ -652,27 +820,71 @@ export default function RoomClient({ code }: { code: string }) {
   const myColor = playerRole ? colorOf(playerRole, room) : null;
   const cellsDisabled = !playerRole || room.status !== "playing" || room.turn !== myColor;
 
+  const hostParticipant = participantForRole("host", room)!;
+  const guestParticipant = participantForRole("guest", room);
   const avatars: ChromeAvatar[] = [
-    { id: room.host.id ?? "host", name: room.host.name, color: "#7b3fe4", isTurn: hostIsTurn, online: room.presence?.host !== false },
-    ...(room.guest
-      ? [{ id: room.guest.id ?? "guest", name: room.guest.name, color: "#e4693f", isTurn: guestIsTurn, online: room.presence?.guest !== false }]
+    { id: hostParticipant.id, name: hostParticipant.name, color: "#7b3fe4", isTurn: hostIsTurn, online: participantOnline(room, hostParticipant) !== false },
+    ...(guestParticipant
+      ? [{ id: guestParticipant.id, name: guestParticipant.name, color: "#e4693f", isTurn: guestIsTurn, online: participantOnline(room, guestParticipant) !== false }]
       : []),
   ];
 
-  const observerAvatars: ChromeAvatar[] = Object.entries(room.spectators ?? {}).map(([id, spectator]) => ({
-    id,
-    name: spectator.name,
-    color: "#777",
-    isTurn: false,
-    online: room.presence?.spectators?.[id] !== false,
-  }));
+  const matchParticipants = getMatchParticipants(room);
+  const activePlayerIds = new Set(avatars.map((avatar) => avatar.id));
+  const observerAvatars: ChromeAvatar[] = matchParticipants
+    .filter((participant) => !activePlayerIds.has(participant.id))
+    .map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      color: "#777",
+      isTurn: false,
+      online: participantOnline(room, participant) !== false,
+    }));
+  const myMatchParticipantId = identity.role === "host" ? "host" : identity.participantId ?? "";
+  const matchRequests = Object.keys(room.matchRequests ?? {}).filter((id) =>
+    matchParticipants.some((participant) => participant.id === id),
+  );
+
+  const profileAvatar: ChromeAvatar =
+    effectiveRole === "guest" && avatars[1]
+      ? {
+          id: avatars[1].id,
+          name: avatars[1].name,
+          color: "#e4693f",
+          isTurn: guestIsTurn,
+          online: avatars[1].online,
+        }
+      : effectiveRole === "spectator"
+        ? {
+            id: identity.userId ?? identity.participantId,
+            name: identity.name,
+            color: "#777",
+            isTurn: false,
+            online: identity.participantId ? room.presence?.spectators?.[identity.participantId] !== false : true,
+          }
+        : avatars[0];
 
   const incomingUndoFrom: PlayerRole | null =
     playerRole && room.undoRequest && room.undoRequest !== playerRole ? room.undoRequest : null;
   const incomingDrawFrom: PlayerRole | null =
     playerRole && room.drawRequest && room.drawRequest !== playerRole ? room.drawRequest : null;
 
-  const canStartGame = room.status === "waiting" && effectiveRole === "host";
+  const girinStatus = room.girinGame?.status ?? "waiting";
+  const currentGameStatus = activeGameId === "girin" ? girinStatus : room.status;
+  const currentStatusLabel =
+    currentGameStatus === "playing"
+      ? "편집 중"
+      : currentGameStatus === "drawing"
+        ? "편집 중"
+        : currentGameStatus === "prompting"
+          ? "문제 입력 중"
+          : currentGameStatus === "finished"
+            ? "종료"
+            : "대기 중";
+  const canStartGame =
+    activeGameId === "girin"
+      ? girinStatus === "waiting" && identity.role === "host"
+      : room.status === "waiting";
 
   function centerGridOnMount(el: HTMLDivElement | null) {
     if (!el || centeredOnceRef.current) return;
@@ -689,61 +901,110 @@ export default function RoomClient({ code }: { code: string }) {
       <ExcelChrome
         fileName="25-26_업무현황"
         avatars={avatars}
+        profileAvatar={profileAvatar}
+        profileStats={profileStats}
         participants={{ players: avatars, observers: observerAvatars }}
-        statusLabel={room.status === "playing" ? "편집 중" : "대기 중"}
+        statusLabel={currentStatusLabel}
         onStatusClick={canStartGame ? requestStartGame : undefined}
         onShare={handleCopyCode}
         shareCode={code}
         games={GAMES}
-        activeGameId="omok"
+        activeGameId={activeGameId}
         onSelectGame={handleSelectGame}
-        onRematch={room.status === "finished" && effectiveRole === "host" ? handleRematch : undefined}
+        onRematch={currentGameStatus === "finished" && identity.role === "host" ? (activeGameId === "girin" ? handleRestartClick : handleRematch) : undefined}
         rematchLabel="새 버전으로 계속"
         onStartGame={canStartGame ? requestStartGame : undefined}
-        onRestart={room.status === "finished" && effectiveRole === "host" ? handleRestartClick : undefined}
+        startActionLabel={activeGameId === "girin" ? "게임 시작" : "대진 참여"}
+        onRestart={currentGameStatus === "finished" && identity.role === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
-        timerSeconds={timerSeconds}
+        timerSeconds={activeGameId === "omok" ? timerSeconds : null}
         onOpenChat={() => setChatOpen(toggleChatOpen)}
-        onRequestUndo={playerRole ? handleRequestUndo : undefined}
-        onRequestDraw={playerRole ? handleRequestDraw : undefined}
+        onRequestUndo={activeGameId === "omok" && playerRole ? handleRequestUndo : undefined}
+        onRequestDraw={activeGameId === "omok" && playerRole ? handleRequestDraw : undefined}
       >
       <div className="relative flex-1 min-h-0 overflow-hidden">
-        {/* grid */}
-        <div className="h-full overflow-auto" ref={centerGridOnMount}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `${HEADER_W}px repeat(${BOARD_SIZE}, ${CELL_W}px)`,
-            }}
-          >
-            <div
-              className="sticky top-0 left-0 z-30 bg-[#f3f3f3] border border-[#e0e0e0]"
-              style={{ width: HEADER_W, height: CELL_H }}
+        {activeGameId === "omok" && room.status === "waiting" && (
+          <div className="absolute right-3 top-3 z-40">
+            <MatchParticipationPanel
+              participants={matchParticipants}
+              requests={matchRequests}
+              myParticipantId={myMatchParticipantId}
+              onToggle={(participate) => {
+                if (participate) {
+                  requestStartGame();
+                  return;
+                }
+                const requested = room.matchRequests?.[myMatchParticipantId];
+                if (requested) {
+                  toggleMatchParticipation(code, requested, false).catch(() =>
+                    showToast("대진 참여를 취소하지 못했습니다.", "error"),
+                  );
+                }
+              }}
             />
-            {COLS.map((c) => (
-              <div
-                key={`h-${c}`}
-                className="sticky top-0 z-20 bg-[#f3f3f3] border border-[#e0e0e0] flex items-center justify-center text-[10px] text-[#666]"
-                style={{ width: CELL_W, height: CELL_H }}
-              >
-                {columnLabel(c)}
-              </div>
-            ))}
-
-            {ROWS.map((r) => (
-              <FragmentRow
-                key={`row-${r}`}
-                row={r}
-                board={board}
-                lastMove={room.lastMove}
-                lastMoverName={lastMoverName}
-                showMoveTag={showMoveTag}
-                disabled={cellsDisabled}
-                onCellClick={handleCellClick}
-              />
-            ))}
           </div>
-        </div>
+        )}
+        {activeGameId === "girin" ? (
+          room.girinGame ? (
+            <GirinGamePanel
+              game={room.girinGame}
+              participantId={identity.role === "host" ? "host" : identity.participantId ?? ""}
+              onSubmitPrompt={(prompt) => {
+                const participantId = identity.role === "host" ? "host" : identity.participantId;
+                if (!participantId) return;
+                submitGirinPromptToRoom(code, participantId, prompt).catch(() =>
+                  showToast("문제를 제출하지 못했습니다.", "error"),
+                );
+              }}
+              onDrawStroke={(stroke: GirinStroke) => {
+                addGirinStroke(code, stroke).catch(() => showToast("그림을 저장하지 못했습니다.", "error"));
+              }}
+              onTimeUp={() => {
+                advanceGirinRoundInRoom(code).catch(() => showToast("다음 문제로 넘어가지 못했습니다.", "error"));
+              }}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center bg-[#f8f8f8] text-[13px] text-[#777]">
+              방장이 게임을 시작하면 순번이 무작위로 정해집니다.
+            </div>
+          )
+        ) : (
+          <div className="h-full overflow-auto" ref={centerGridOnMount}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `${HEADER_W}px repeat(${BOARD_SIZE}, ${CELL_W}px)`,
+              }}
+            >
+              <div
+                className="sticky top-0 left-0 z-30 bg-[#f3f3f3] border border-[#e0e0e0]"
+                style={{ width: HEADER_W, height: CELL_H }}
+              />
+              {COLS.map((c) => (
+                <div
+                  key={`h-${c}`}
+                  className="sticky top-0 z-20 bg-[#f3f3f3] border border-[#e0e0e0] flex items-center justify-center text-[10px] text-[#666]"
+                  style={{ width: CELL_W, height: CELL_H }}
+                >
+                  {columnLabel(c)}
+                </div>
+              ))}
+
+              {ROWS.map((r) => (
+                <FragmentRow
+                  key={`row-${r}`}
+                  row={r}
+                  board={board}
+                  lastMove={room.lastMove}
+                  lastMoverName={lastMoverName}
+                  showMoveTag={showMoveTag}
+                  disabled={cellsDisabled}
+                  onCellClick={handleCellClick}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         <ChatPanel
           open={chatOpen}
@@ -759,39 +1020,14 @@ export default function RoomClient({ code }: { code: string }) {
         open={startConfirmOpen}
         onConfirm={handleConfirmStartGame}
         onCancel={() => setStartConfirmOpen(false)}
+        title={activeGameId === "girin" ? "게임을 시작하시겠습니까?" : "대진에 참여하시겠습니까?"}
+        description={
+          activeGameId === "girin"
+            ? "방의 모든 참여자가 게임에 참여하고, 순번이 무작위로 정해집니다."
+            : "두 명이 대진에 참여하면 자동으로 게임이 시작됩니다."
+        }
+        confirmLabel={activeGameId === "girin" ? "시작" : "참여하기"}
       />
-
-      {opponentPickerOpen && effectiveRole === "host" && (
-        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center px-4">
-          <div className="bg-white rounded-sm shadow-lg w-[384px] px-5 py-4">
-            <p className="text-[13px] font-semibold text-[#333]">게임 상대 선택</p>
-            <p className="text-[11px] text-[#666] mt-1">이번 게임에서 대국할 참여자를 선택하세요.</p>
-            <div className="flex flex-col gap-2 mt-4">
-              {getGameCandidates(room).map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  onClick={() => handleStartGame(candidate.id)}
-                  disabled={startingGame}
-                  className="flex items-center justify-between border border-[#c8c8c8] rounded-sm px-3 py-2 text-left text-[12px] hover:bg-[#f0f7f3] disabled:opacity-60"
-                >
-                  <span>{candidate.name}</span>
-                  <span className="text-[10px] text-[#777]">{candidate.role === "guest" ? "참여자" : "옵저버"}</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-end mt-4">
-              <button
-                type="button"
-                onClick={() => setOpponentPickerOpen(false)}
-                className="text-[12px] px-3 py-1.5 rounded-sm border border-[#c8c8c8] hover:bg-[#f5f5f5]"
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {incomingUndoFrom && (
         <div className="fixed top-16 right-3 z-[95] bg-white border border-[#d0d0d0] rounded-sm shadow-md px-3 py-2.5 w-72 text-[12px]">

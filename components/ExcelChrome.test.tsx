@@ -4,7 +4,9 @@ import {
   AddinsMenuItems,
   CopilotButton,
   ExcelChrome,
+  MatchParticipationPanel,
   ParticipantList,
+  ProfileStatsDropdown,
   ShareDropdown,
   SettingsDropdown,
   StartGameConfirmDialog,
@@ -189,5 +191,55 @@ describe("ExcelChrome", () => {
     expect(markup).toContain("현재 문서 코드");
     expect(markup).toContain("ABC123");
     expect(markup).toContain("복사하기");
+  });
+
+  it("shows game-specific records in the profile menu", () => {
+    const markup = renderToStaticMarkup(
+      <ProfileStatsDropdown
+        name="Host"
+        games={[{ id: "omok", label: "Omok", available: true }]}
+        stats={{ omok: { played: 3, wins: 2, losses: 1, draws: 0 } }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(markup).toContain("Host님의 전적");
+    expect(markup).toContain("Omok");
+    expect(markup).toContain("2승");
+    expect(markup).toContain("1패");
+  });
+
+  it("shows girin quiz records with its own metrics", () => {
+    const markup = renderToStaticMarkup(
+      <ProfileStatsDropdown
+        name="Host"
+        games={[{ id: "girin", label: "내가 그린 기린 그림", available: true }]}
+        stats={{ girin: { played: 2, wins: 1, losses: 1, draws: 0, totalQuizzes: 2, correctAnswers: 1, stumped: 1 } }}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(markup).toContain("2퀴즈");
+    expect(markup).toContain("1정답");
+    expect(markup).toContain("1출제 성공");
+  });
+
+  it("shows raised hands and lets a participant join or leave the match queue", () => {
+    const markup = renderToStaticMarkup(
+      <MatchParticipationPanel
+        participants={[
+          { id: "host", name: "Host", role: "host" },
+          { id: "guest-1", name: "Guest", role: "guest" },
+        ]}
+        requests={["host"]}
+        myParticipantId="host"
+        onToggle={() => {}}
+      />,
+    );
+
+    expect(markup).toContain("대진 참여");
+    expect(markup).toContain("Host");
+    expect(markup).toContain("✋");
+    expect(markup).toContain("대진 참여 취소");
   });
 });

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   canRequestUndo,
   DISCONNECT_GRACE_MS,
+  applyMatchParticipation,
+  getMatchParticipants,
   getGameCandidates,
   removeParticipantFromRoom,
   type Room,
@@ -104,5 +106,55 @@ describe("canRequestUndo", () => {
 describe("disconnect grace period", () => {
   it("ends a disconnected game after 15 seconds", () => {
     expect(DISCONNECT_GRACE_MS).toBe(15000);
+  });
+});
+
+describe("match participation", () => {
+  it("lists the host, guest, and online spectators as match participants", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      spectators: {
+        "spectator-1": { id: "spectator-1", name: "Online observer" },
+        "spectator-2": { id: "spectator-2", name: "Offline observer" },
+      },
+      presence: { host: true, guest: true, spectators: { "spectator-1": true, "spectator-2": false } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(getMatchParticipants(room)).toEqual([
+      { id: "host", name: "Host", role: "host" },
+      { id: "guest-1", name: "Guest", role: "guest" },
+      { id: "spectator-1", name: "Online observer", role: "spectator" },
+    ]);
+  });
+
+  it("starts a game automatically when the second participant raises their hand", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      spectators: { "spectator-1": { id: "spectator-1", name: "Observer" } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+    const host = { id: "host", name: "Host", role: "host" as const };
+    const guest = { id: "guest-1", name: "Guest", role: "guest" as const };
+
+    const oneHand = applyMatchParticipation(room, host, true);
+    expect(oneHand.status).toBe("waiting");
+    expect(oneHand.matchRequests).toEqual({ host });
+
+    const matched = applyMatchParticipation(oneHand, guest, true);
+    expect(matched.status).toBe("playing");
+    expect(matched.matchRequests).toBeUndefined();
+    expect(matched.gamePlayers).toEqual({ host, guest });
+    expect(matched.gameStartedAt).toEqual(matched.turnStartedAt);
   });
 });

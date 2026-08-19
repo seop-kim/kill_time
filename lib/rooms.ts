@@ -1,6 +1,7 @@
 import { get, onDisconnect, onValue, push, ref, runTransaction, set, update } from "firebase/database";
 import { getDb } from "./firebase";
 import { cellKey, type Board, type Stone } from "./gomoku";
+import type { GirinGame } from "./girin";
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
@@ -15,8 +16,15 @@ export interface Spectator {
   name: string;
 }
 
+export interface MatchParticipant {
+  id: string;
+  name: string;
+  role: ParticipantRole;
+}
+
 export interface ChatMessage {
   by: ParticipantRole;
+  participantId?: string;
   name: string;
   text: string;
   at: number;
@@ -35,6 +43,13 @@ export interface Room {
   board?: Board;
   /** client timestamp (ms) when the current turn began, drives the 30s timer */
   turnStartedAt?: number;
+  /** client timestamp (ms) when the current game session began */
+  gameStartedAt?: number;
+  /** participants who have raised their hand for the next match */
+  matchRequests?: Record<string, MatchParticipant>;
+  /** the two participants currently assigned to the game slots */
+  gamePlayers?: { host: MatchParticipant; guest: MatchParticipant };
+  girinGame?: GirinGame;
   undoRequest?: PlayerRole | null;
   drawRequest?: PlayerRole | null;
   presence?: { host?: boolean; guest?: boolean; spectators?: Record<string, boolean> };
@@ -84,6 +99,60 @@ export function getGameCandidates(room: Room): GameCandidate[] {
   return candidates;
 }
 
+export function getMatchParticipants(room: Room): MatchParticipant[] {
+  const participants: MatchParticipant[] = [{ id: "host", name: room.host.name, role: "host" }];
+  if (room.guest) participants.push({ id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" });
+  for (const [id, spectator] of Object.entries(room.spectators ?? {})) {
+    participants.push({ id, name: spectator.name, role: "spectator" });
+  }
+
+  return participants.filter((participant) => {
+    if (participant.role === "host") return room.presence?.host !== false;
+    if (participant.role === "guest") return room.presence?.guest !== false;
+    return room.presence?.spectators?.[participant.id] !== false;
+  });
+}
+
+function isParticipantOnline(room: Room, participant: MatchParticipant): boolean {
+  return getMatchParticipants(room).some((current) => current.id === participant.id);
+}
+
+function initializeGame(room: Room, players: [MatchParticipant, MatchParticipant]) {
+  const startedAt = Date.now();
+  room.gamePlayers = { host: players[0], guest: players[1] };
+  delete room.matchRequests;
+  if (room.board) delete room.board;
+  room.turn = "black";
+  room.status = "playing";
+  room.winner = null;
+  room.lastMove = null;
+  room.turnStartedAt = startedAt;
+  room.gameStartedAt = startedAt;
+  room.blackPlayer = "host";
+  room.undoRequest = null;
+  room.drawRequest = null;
+}
+
+export function applyMatchParticipation(
+  room: Room,
+  participant: MatchParticipant,
+  participate: boolean,
+): Room {
+  if (room.status !== "waiting") return room;
+
+  const nextRoom: Room = { ...room };
+  const requests = { ...(room.matchRequests ?? {}) };
+  if (participate) requests[participant.id] = participant;
+  else delete requests[participant.id];
+
+  if (Object.keys(requests).length > 0) nextRoom.matchRequests = requests;
+  else delete nextRoom.matchRequests;
+
+  const selected = Object.values(requests).filter((item) => isParticipantOnline(nextRoom, item));
+  if (selected.length >= 2) initializeGame(nextRoom, [selected[0], selected[1]]);
+  return nextRoom;
+}
+
 export function removeParticipantFromRoom(
   room: Room,
   role: ParticipantRole,
@@ -98,6 +167,11 @@ export function removeParticipantFromRoom(
       nextRoom.presence = { ...room.presence };
       delete nextRoom.presence.guest;
     }
+    if (room.matchRequests) {
+      nextRoom.matchRequests = { ...room.matchRequests };
+      delete nextRoom.matchRequests[participantId ?? "guest"];
+      if (Object.keys(nextRoom.matchRequests).length === 0) delete nextRoom.matchRequests;
+    }
     return nextRoom;
   }
 
@@ -109,6 +183,11 @@ export function removeParticipantFromRoom(
     nextRoom.presence = { ...room.presence };
     nextRoom.presence.spectators = { ...(room.presence.spectators ?? {}) };
     delete nextRoom.presence.spectators[participantId];
+  }
+  if (room.matchRequests) {
+    nextRoom.matchRequests = { ...room.matchRequests };
+    delete nextRoom.matchRequests[participantId];
+    if (Object.keys(nextRoom.matchRequests).length === 0) delete nextRoom.matchRequests;
   }
   return nextRoom;
 }
@@ -199,15 +278,22 @@ export async function startGame(code: string, candidateId: string): Promise<void
       room.spectators = spectators;
     }
 
-    if (room.board) delete room.board;
-    room.turn = "black";
-    room.status = "playing";
-    room.winner = null;
-    room.lastMove = null;
-    room.turnStartedAt = Date.now();
-    room.undoRequest = null;
-    room.drawRequest = null;
+    initializeGame(room, [
+      { id: "host", name: room.host.name, role: "host" },
+      { id: candidate.id, name: candidate.name, role: candidate.role },
+    ]);
     return room;
+  });
+}
+
+export async function toggleMatchParticipation(
+  code: string,
+  participant: MatchParticipant,
+  participate: boolean,
+): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room) return room;
+    return applyMatchParticipation(room, participant, participate);
   });
 }
 
@@ -328,6 +414,7 @@ export async function acceptDraw(code: string): Promise<void> {
 
 export async function rematch(code: string, currentBlackPlayer: PlayerRole): Promise<void> {
   const nextBlack: PlayerRole = currentBlackPlayer === "host" ? "guest" : "host";
+  const startedAt = Date.now();
   await update(roomRef(code), {
     board: null,
     turn: "black",
@@ -335,7 +422,9 @@ export async function rematch(code: string, currentBlackPlayer: PlayerRole): Pro
     winner: null,
     lastMove: null,
     blackPlayer: nextBlack,
-    turnStartedAt: Date.now(),
+    turnStartedAt: startedAt,
+    gameStartedAt: startedAt,
+    matchRequests: null,
     undoRequest: null,
     drawRequest: null,
   });
@@ -343,7 +432,7 @@ export async function rematch(code: string, currentBlackPlayer: PlayerRole): Pro
 
 export async function sendChatMessage(
   code: string,
-  msg: { by: ParticipantRole; name: string; text: string },
+  msg: { by: ParticipantRole; participantId?: string; name: string; text: string },
 ): Promise<void> {
   await push(ref(getDb(), `rooms/${code}/chat`), { ...msg, at: Date.now() });
 }
