@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const RIBBON_TABS = ["파일", "홈", "삽입", "페이지 레이아웃", "수식", "데이터", "검토", "보기", "자동화", "도움말", "그리기"];
 
@@ -426,6 +427,21 @@ export function ExcelChrome({
   const [addinsOpen, setAddinsOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
 
+  // The add-ins button lives inside the ribbon toolbar row, which has
+  // overflow-x-auto — per the CSS overflow spec that implicitly makes
+  // overflow-y auto too, so a dropdown nested inside it gets clipped/scrolled
+  // instead of opening freely. Portal it to <body> as a fixed-position panel
+  // anchored to the button's real screen position instead.
+  const addinsButtonRef = useRef<HTMLButtonElement>(null);
+  const [addinsPos, setAddinsPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (addinsOpen && addinsButtonRef.current) {
+      const rect = addinsButtonRef.current.getBoundingClientRect();
+      setAddinsPos({ top: rect.bottom + 6, left: rect.right - 200 });
+    }
+  }, [addinsOpen]);
+
   return (
     <div className="h-screen flex flex-col overflow-hidden text-[#333]" style={zoomStyle}>
       <div className="shrink-0">
@@ -729,52 +745,60 @@ export function ExcelChrome({
           </div>
           <div className="relative flex flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] px-1">
             <button
+              ref={addinsButtonRef}
               onClick={() => setAddinsOpen((v) => !v)}
               className="flex flex-col items-center gap-0.5 hover:bg-[#e8e8e8] rounded-[2px] px-1"
             >
               <AddinsIcon />
               추가 기능
             </button>
-            {addinsOpen && (onOpenChat || onRequestUndo || onRequestDraw) && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setAddinsOpen(false)} />
-                <div className="absolute right-0 top-[30px] z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1 w-[130px] text-[11px] text-[#333] text-left">
-                  {onOpenChat && (
-                    <button
-                      onClick={() => {
-                        setAddinsOpen(false);
-                        onOpenChat();
-                      }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]"
-                    >
-                      채팅
-                    </button>
-                  )}
-                  {onRequestUndo && (
-                    <button
-                      onClick={() => {
-                        setAddinsOpen(false);
-                        onRequestUndo();
-                      }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]"
-                    >
-                      한 수 무르기
-                    </button>
-                  )}
-                  {onRequestDraw && (
-                    <button
-                      onClick={() => {
-                        setAddinsOpen(false);
-                        onRequestDraw();
-                      }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]"
-                    >
-                      무승부 요청
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
+            {addinsOpen &&
+              addinsPos &&
+              (onOpenChat || onRequestUndo || onRequestDraw) &&
+              createPortal(
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setAddinsOpen(false)} />
+                  <div
+                    className="fixed z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 w-[200px] text-[15px] text-[#333] text-left"
+                    style={{ top: addinsPos.top, left: addinsPos.left }}
+                  >
+                    {onOpenChat && (
+                      <button
+                        onClick={() => {
+                          setAddinsOpen(false);
+                          onOpenChat();
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+                      >
+                        채팅
+                      </button>
+                    )}
+                    {onRequestUndo && (
+                      <button
+                        onClick={() => {
+                          setAddinsOpen(false);
+                          onRequestUndo();
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+                      >
+                        한 수 무르기
+                      </button>
+                    )}
+                    {onRequestDraw && (
+                      <button
+                        onClick={() => {
+                          setAddinsOpen(false);
+                          onRequestDraw();
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-[#f0f0f0]"
+                      >
+                        무승부 요청
+                      </button>
+                    )}
+                  </div>
+                </>,
+                document.body,
+              )}
           </div>
         </div>
       </div>
