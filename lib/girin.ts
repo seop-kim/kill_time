@@ -96,6 +96,7 @@ export interface GirinRoundResult {
 }
 
 export type GirinStatus = "waiting" | "prompting" | "drawing" | "finished";
+export type GirinFinishReason = "participant_left";
 
 export interface GirinGame {
   status: GirinStatus;
@@ -108,6 +109,7 @@ export interface GirinGame {
   pixels?: Record<string, GirinPixel>;
   winnerId?: string;
   finishedAt?: number;
+  finishReason?: GirinFinishReason;
   lastRoundResult?: GirinRoundResult;
 }
 
@@ -121,6 +123,24 @@ function cloneGame(game: GirinGame): GirinGame {
 
 function orderedParticipants(game: GirinGame): GirinParticipant[] {
   return Object.values(game.participants).sort((a, b) => a.order - b.order);
+}
+
+export function finishGirinGameIfSolo(
+  game: GirinGame,
+  participantIds: string[],
+  now = Date.now(),
+): GirinGame {
+  if (game.status === "finished") return game;
+
+  const remainingParticipants = participantIds.filter((participantId) => game.participants[participantId]);
+  if (remainingParticipants.length >= 2) return game;
+
+  const next = cloneGame(game);
+  next.status = "finished";
+  next.finishedAt = now;
+  next.finishReason = "participant_left";
+  delete next.turnStartedAt;
+  return next;
 }
 
 export function createGirinGame(

@@ -15,6 +15,8 @@ describe("WorkCoverSheet", () => {
     expect(markup).toContain("후속 조치");
     expect(markup).toContain("2026-01-02");
     expect(markup).toContain("PC 세팅");
+    expect(markup).toContain("김도윤 사원");
+    expect(markup).not.toContain("배진영 사원");
     expect(markup).not.toContain("IT 프로젝트 운영 현황");
   });
 });

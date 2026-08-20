@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { onValue, ref } from "firebase/database";
 import { getDb } from "@/lib/firebase";
@@ -76,6 +75,7 @@ import {
 import { ChatPanel } from "@/components/ChatPanel";
 import { GirinGamePanel } from "@/components/GirinGamePanel";
 import { WorkCoverSheet } from "@/components/WorkCoverSheet";
+import { ErrorPage } from "@/components/ErrorPage";
 import { toggleChatOpen } from "@/lib/chat";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
@@ -331,11 +331,15 @@ export default function RoomClient({ code }: { code: string }) {
     if (game.status === "finished" && prevGirinStatusRef.current !== "finished") {
       const winnerName = game.winnerId ? game.participants[game.winnerId]?.name : undefined;
       const winnerMessage =
-        game.lastRoundResult?.outcome === "stumped"
+        game.finishReason === "participant_left"
+          ? "참여자가 부족해 게임이 종료되었습니다."
+          : game.lastRoundResult?.outcome === "stumped"
           ? `${winnerName ?? "출제자"}님이 5분 동안 정답을 내주지 않아 이번 퀴즈에서 승리했습니다.`
           : `${winnerName ?? "누군가"}님이 정답을 맞혀 이번 퀴즈에서 승리했습니다.`;
       showToast(
-        game.winnerId ? winnerMessage : "한 사이클이 끝나 게임이 종료되었습니다.",
+        game.finishReason === "participant_left" || game.winnerId
+          ? winnerMessage
+          : "한 사이클이 끝나 게임이 종료되었습니다.",
         "info",
         { placement: "top-center", emphasis: true },
       );
@@ -821,15 +825,16 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   if (!room) {
-    return (
-      <div className="flex-1 flex items-center justify-center px-4">
-        <div className="text-center text-[13px] text-[#555]">
-          <p>{dbError ? "문서 서버에 연결할 수 없습니다." : "문서를 찾을 수 없습니다."}</p>
-          <Link href="/" className="text-[#217346] underline">
-            처음 화면으로 돌아가기
-          </Link>
-        </div>
-      </div>
+    return dbError ? (
+      <ErrorPage
+        title="문서 서버 오류가 발생했습니다."
+        message="문서를 불러오지 못했습니다. 잠시 후 처음 화면에서 다시 시도해 주세요."
+      />
+    ) : (
+      <ErrorPage
+        title="문서를 찾을 수 없습니다."
+        message="존재하지 않거나 이미 삭제된 문서입니다."
+      />
     );
   }
 

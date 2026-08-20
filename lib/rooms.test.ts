@@ -9,6 +9,7 @@ import {
   normalizeRoomGameId,
   applyRoomGameSelection,
   clearRoomIfEmpty,
+  finishSoloGirinInRoom,
   removeParticipantFromRoom,
   transferOfflineHost,
   type Room,
@@ -191,6 +192,35 @@ describe("room cleanup", () => {
     };
 
     expect(clearRoomIfEmpty(room)).toBe(room);
+  });
+
+  it("finishes a Girin game when room cleanup leaves one participant", () => {
+    const room: Room = {
+      host: { id: "host-1", name: "Host" },
+      guest: null,
+      presence: { host: true },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+      girinGame: {
+        status: "drawing",
+        participants: {
+          "host-1": { id: "host-1", name: "Host", role: "host", order: 1 },
+          "guest-1": { id: "guest-1", name: "Guest", role: "guest", order: 2 },
+        },
+        currentParticipantId: "host-1",
+        currentRound: 1,
+        turnStartedAt: 1000,
+      },
+    };
+
+    const updated = finishSoloGirinInRoom(room, 5000);
+
+    expect(updated.girinGame?.status).toBe("finished");
+    expect(updated.girinGame?.finishReason).toBe("participant_left");
+    expect(updated.girinGame?.finishedAt).toBe(5000);
   });
 });
 

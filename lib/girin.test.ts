@@ -6,6 +6,7 @@ import {
   createGirinPixel,
   createGirinGame,
   createGirinLinePixels,
+  finishGirinGameIfSolo,
   girinPixelKey,
   submitGirinAnswer,
   submitGirinPrompt,
@@ -107,5 +108,22 @@ describe("내가 그린 기린 그림 game state", () => {
     expect(next.status).toBe("prompting");
     expect(next.lastRoundResult?.winnerId).toBe(drawing.currentParticipantId);
     expect(next.lastRoundResult?.outcome).toBe("stumped");
+  });
+
+  it("finishes the game when fewer than two room participants remain", () => {
+    const game = createGirinGame(participants, 1000, () => 0.42);
+    const finished = finishGirinGameIfSolo(game, [game.currentParticipantId], 5000);
+
+    expect(finished.status).toBe("finished");
+    expect(finished.finishReason).toBe("participant_left");
+    expect(finished.finishedAt).toBe(5000);
+    expect(finished.turnStartedAt).toBeUndefined();
+  });
+
+  it("keeps the game active while at least two participants remain", () => {
+    const game = createGirinGame(participants, 1000, () => 0.42);
+    const participantIds = Object.keys(game.participants).slice(0, 2);
+
+    expect(finishGirinGameIfSolo(game, participantIds)).toBe(game);
   });
 });

@@ -1,7 +1,7 @@
 import { get, onDisconnect, onValue, push, ref, runTransaction, set, update } from "firebase/database";
 import { getDb } from "./firebase";
 import { cellKey, type Board, type Stone } from "./gomoku";
-import type { GirinGame } from "./girin";
+import { finishGirinGameIfSolo, type GirinGame } from "./girin";
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
@@ -270,6 +270,15 @@ export async function setRoomGame(code: string, gameId: RoomGameId): Promise<voi
   });
 }
 
+export function finishSoloGirinInRoom(room: Room, now = Date.now()): Room {
+  if (!room.girinGame) return room;
+
+  const participantIds = getMatchParticipants(room).map((participant) => participant.id);
+  const nextGirinGame = finishGirinGameIfSolo(room.girinGame, participantIds, now);
+  if (nextGirinGame === room.girinGame) return room;
+  return { ...room, girinGame: nextGirinGame };
+}
+
 export async function createRoom(hostName: string): Promise<string> {
   let code = generateRoomCode();
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -376,15 +385,18 @@ export async function leaveRoom(code: string, role: ParticipantRole, participant
   await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room) return room;
 
+    let nextRoom: Room;
     if (role === "host") {
       const hostLeft = {
         ...room,
         presence: { ...(room.presence ?? {}), host: false },
       };
-      return clearRoomIfEmpty(transferOfflineHost(hostLeft));
+      nextRoom = transferOfflineHost(hostLeft);
+    } else {
+      nextRoom = removeParticipantFromRoom(room, role, participantId);
     }
 
-    return clearRoomIfEmpty(removeParticipantFromRoom(room, role, participantId));
+    return clearRoomIfEmpty(finishSoloGirinInRoom(nextRoom));
   });
 }
 
@@ -398,7 +410,7 @@ export function subscribeRoom(code: string, callback: (room: Room | null) => voi
 export async function transferOfflineHostInRoom(code: string): Promise<void> {
   await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room) return room;
-    return clearRoomIfEmpty(transferOfflineHost(room));
+    return clearRoomIfEmpty(finishSoloGirinInRoom(transferOfflineHost(room)));
   });
 }
 
