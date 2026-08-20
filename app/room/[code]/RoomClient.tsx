@@ -49,6 +49,7 @@ import {
   addGirinPixel,
   advanceGirinRoundInRoom,
   clearGirinPixels,
+  getGirinTurnToastMessage,
   resetGirinGame,
   startGirinGame,
   submitGirinAnswerToRoom,
@@ -173,6 +174,7 @@ export default function RoomClient({ code }: { code: string }) {
   const statsAttemptedRef = useRef<string | null>(null);
   const girinQuizAttemptedRef = useRef<string | null>(null);
   const prevGirinStatusRef = useRef<GirinGame["status"] | null>(null);
+  const prevGirinGameRef = useRef<GirinGame | null>(null);
   const hasConnectedOnceRef = useRef(false);
   const lastMoveInitRef = useRef(false);
   const prevLastMoveRef = useRef<Room["lastMove"]>(null);
@@ -324,8 +326,14 @@ export default function RoomClient({ code }: { code: string }) {
     const game = room?.girinGame;
     if (!game) {
       prevGirinStatusRef.current = null;
+      prevGirinGameRef.current = null;
       girinQuizAttemptedRef.current = null;
       return;
+    }
+
+    const turnToastMessage = getGirinTurnToastMessage(prevGirinGameRef.current, game);
+    if (turnToastMessage) {
+      showToast(turnToastMessage, "info", { placement: "top-center", emphasis: true });
     }
 
     if (game.status === "finished" && prevGirinStatusRef.current !== "finished") {
@@ -344,6 +352,7 @@ export default function RoomClient({ code }: { code: string }) {
         { placement: "top-center", emphasis: true },
       );
     }
+    prevGirinGameRef.current = game;
     prevGirinStatusRef.current = game.status;
   }, [room?.girinGame, showToast]);
 

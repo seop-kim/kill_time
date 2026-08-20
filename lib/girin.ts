@@ -143,6 +143,28 @@ export function finishGirinGameIfSolo(
   return next;
 }
 
+export function getGirinTurnToastMessage(previous: GirinGame | null, current: GirinGame): string | null {
+  const questioner = current.participants[current.currentParticipantId];
+  if (!questioner) return null;
+
+  const questionerLabel = `${questioner.order}번 ${questioner.name}`;
+  const questionerChanged =
+    !previous ||
+    previous.status !== current.status ||
+    previous.currentParticipantId !== current.currentParticipantId ||
+    previous.currentRound !== current.currentRound;
+
+  if (current.status === "prompting" && questionerChanged) {
+    return `${questionerLabel}님이 출제자입니다. 문제를 작성해 주세요.`;
+  }
+
+  if (current.status === "drawing" && (!previous || previous.status !== "drawing" || previous.prompt !== current.prompt)) {
+    return `${questionerLabel}님이 문제를 작성했습니다. 그림 그리기를 시작합니다.`;
+  }
+
+  return null;
+}
+
 export function createGirinGame(
   participants: GirinParticipant[],
   now = Date.now(),
