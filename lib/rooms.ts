@@ -31,6 +31,26 @@ export interface ChatMessage {
   at: number;
 }
 
+export type ChatMessageInput = Omit<ChatMessage, "at">;
+
+export interface ChatLogMessage extends ChatMessage {
+  roomCode: string;
+}
+
+export function buildChatLogUpdates(
+  code: string,
+  messageKey: string,
+  msg: ChatMessageInput,
+  at: number,
+): Record<string, ChatMessage | ChatLogMessage> {
+  const message: ChatMessage = { ...msg, at };
+
+  return {
+    [`rooms/${code}/chat/${messageKey}`]: message,
+    [`chatLogs/${code}/${messageKey}`]: { ...message, roomCode: code },
+  };
+}
+
 export interface Room {
   /** The game selected for the entire room. Older rooms default to omok. */
   gameId?: RoomGameId;
@@ -535,9 +555,13 @@ export async function rematch(code: string, currentBlackPlayer: PlayerRole): Pro
 
 export async function sendChatMessage(
   code: string,
-  msg: { by: ParticipantRole; participantId?: string; name: string; text: string },
+  msg: ChatMessageInput,
 ): Promise<void> {
-  await push(ref(getDb(), `rooms/${code}/chat`), { ...msg, at: Date.now() });
+  const db = getDb();
+  const messageRef = push(ref(db, `rooms/${code}/chat`));
+  if (!messageRef.key) throw new Error("채팅 메시지 키를 생성하지 못했습니다.");
+
+  await update(ref(db), buildChatLogUpdates(code, messageRef.key, msg, Date.now()));
 }
 
 export function subscribeChat(code: string, callback: (messages: ChatMessage[]) => void): () => void {

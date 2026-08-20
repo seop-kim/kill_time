@@ -8,6 +8,7 @@ import {
   EraserPalette,
   ExcelChrome,
   FHD_VIEWPORT_WIDTH,
+  getParticipantGroupsForGame,
   MatchParticipationPanel,
   ParticipantList,
   ProfileStatsDropdown,
@@ -241,6 +242,21 @@ describe("ExcelChrome", () => {
     expect(participantMarkup).toContain("게임 중");
     expect(participantMarkup).toContain("옵저버");
     expect(participantMarkup).toContain("Observer");
+  });
+
+  it("shows every room participant as a player in girin", () => {
+    const participantMarkup = renderToStaticMarkup(
+      <ParticipantList
+        participants={getParticipantGroupsForGame("girin", {
+          players: [{ id: "host", name: "Host", color: "#217346", isTurn: false }],
+          observers: [{ id: "participant-3", name: "Participant 3", color: "#777", isTurn: false }],
+        })}
+      />,
+    );
+
+    expect(participantMarkup).toContain("게임 중");
+    expect(participantMarkup).toContain("Participant 3");
+    expect(participantMarkup).not.toContain("옵저버");
   });
 
   it("shows the current turn time beside 따라잡기", () => {

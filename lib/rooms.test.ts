@@ -10,10 +10,40 @@ import {
   applyRoomGameSelection,
   clearRoomIfEmpty,
   finishSoloGirinInRoom,
+  buildChatLogUpdates,
   removeParticipantFromRoom,
   transferOfflineHost,
   type Room,
 } from "./rooms";
+
+describe("buildChatLogUpdates", () => {
+  it("keeps the room chat entry and durable log entry in sync", () => {
+    expect(
+      buildChatLogUpdates(
+        "AB12CD",
+        "message-1",
+        { by: "host", participantId: "user-1", name: "Host", text: "안녕하세요" },
+        1234,
+      ),
+    ).toEqual({
+      "rooms/AB12CD/chat/message-1": {
+        by: "host",
+        participantId: "user-1",
+        name: "Host",
+        text: "안녕하세요",
+        at: 1234,
+      },
+      "chatLogs/AB12CD/message-1": {
+        by: "host",
+        participantId: "user-1",
+        name: "Host",
+        text: "안녕하세요",
+        at: 1234,
+        roomCode: "AB12CD",
+      },
+    });
+  });
+});
 
 describe("canRequestUndo", () => {
   it("allows the player whose turn it is to request undoing the opponent's last move", () => {

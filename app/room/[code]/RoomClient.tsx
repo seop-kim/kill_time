@@ -923,7 +923,7 @@ export default function RoomClient({ code }: { code: string }) {
       id: participant.id,
       name: participant.name,
       color: "#777",
-      isTurn: false,
+      isTurn: activeGameId === "girin" && room.girinGame?.currentParticipantId === participant.id,
       isHost: false,
       online: participantOnline(room, participant) !== false,
     }));
@@ -1067,34 +1067,28 @@ export default function RoomClient({ code }: { code: string }) {
           </div>
         )}
         {activeGameId === "girin" ? (
-          room.girinGame ? (
-            <GirinGamePanel
-              game={room.girinGame}
-              participantId={identity.role === "host" ? room.host.id ?? "host" : identity.participantId ?? ""}
-              drawingColor={drawingColor}
-              drawingWidth={drawingWidth}
-              drawingEraser={drawingEraser}
-              eraserWidth={eraserWidth}
-              clearVersion={drawingClearVersion}
-              onSubmitPrompt={(prompt) => {
+          <GirinGamePanel
+            game={room.girinGame ?? null}
+            participantId={identity.role === "host" ? room.host.id ?? "host" : identity.participantId ?? ""}
+            drawingColor={drawingColor}
+            drawingWidth={drawingWidth}
+            drawingEraser={drawingEraser}
+            eraserWidth={eraserWidth}
+            clearVersion={drawingClearVersion}
+            onSubmitPrompt={(prompt) => {
     const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
-                if (!participantId) return;
-                submitGirinPromptToRoom(code, participantId, prompt).catch(() =>
-                  showToast("문제를 제출하지 못했습니다.", "error"),
-                );
-              }}
-              onDrawPixels={(pixels) => {
-                addGirinPixels(code, pixels).catch(() => showToast("픽셀을 저장하지 못했습니다.", "error"));
-              }}
-              onTimeUp={() => {
-                advanceGirinRoundInRoom(code).catch(() => showToast("다음 문제로 넘어가지 못했습니다.", "error"));
-              }}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center bg-[#f8f8f8] text-[13px] text-[#777]">
-              방장이 게임을 시작하면 순번이 무작위로 정해집니다.
-            </div>
-          )
+              if (!participantId) return;
+              submitGirinPromptToRoom(code, participantId, prompt).catch(() =>
+                showToast("문제를 제출하지 못했습니다.", "error"),
+              );
+            }}
+            onDrawPixels={(pixels) => {
+              addGirinPixels(code, pixels).catch(() => showToast("픽셀을 저장하지 못했습니다.", "error"));
+            }}
+            onTimeUp={() => {
+              advanceGirinRoundInRoom(code).catch(() => showToast("다음 문제로 넘어가지 못했습니다.", "error"));
+            }}
+          />
         ) : (
           <div className="h-full overflow-auto" ref={centerGridOnMount}>
             <div

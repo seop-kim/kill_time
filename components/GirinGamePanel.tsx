@@ -37,7 +37,7 @@ export function GirinGamePanel({
   eraserWidth = 1,
   clearVersion = 0,
 }: {
-  game: GirinGame;
+  game: GirinGame | null;
   participantId: string;
   onSubmitPrompt: (prompt: string) => void;
   onDrawPixels: (pixels: GirinPixel[]) => void;
@@ -56,9 +56,11 @@ export function GirinGamePanel({
   const [promptDraft, setPromptDraft] = useState("");
   const [localPixels, setLocalPixels] = useState<Record<string, GirinPixel>>({});
   const localPixelsRef = useRef<Record<string, GirinPixel>>({});
-  const isDrawer = game.currentParticipantId === participantId;
-  const canDraw = isDrawer && game.status === "drawing";
-  const pixelsCleared = game.pixels == null;
+  const isDrawer = Boolean(game && game.currentParticipantId === participantId);
+  const canDraw = Boolean(game && isDrawer && game.status === "drawing");
+  const pixelsCleared = game?.pixels == null;
+  const gameStatus = game?.status;
+  const gameTurnStartedAt = game?.turnStartedAt;
 
   function flushPaintFrame() {
     paintFrameRef.current = null;
@@ -83,14 +85,15 @@ export function GirinGamePanel({
   }
 
   useEffect(() => {
-    if (game.status !== "drawing" || !game.turnStartedAt) {
+    if (gameStatus !== "drawing" || gameTurnStartedAt == null) {
       return undefined;
     }
 
+    const turnStartedAt = gameTurnStartedAt;
     let timer: ReturnType<typeof setInterval> | undefined;
     let expired = false;
     function tick() {
-      const next = getGirinRemainingSeconds(game.turnStartedAt!);
+      const next = getGirinRemainingSeconds(turnStartedAt);
       if (next === 0 && !expired) {
         expired = true;
         onTimeUp();
@@ -101,7 +104,7 @@ export function GirinGamePanel({
     tick();
     if (!expired) timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [game.status, game.turnStartedAt, onTimeUp]);
+  }, [gameStatus, gameTurnStartedAt, onTimeUp]);
 
   useEffect(() => {
     // A new prompt or round starts with an empty board. The Firebase update
@@ -120,7 +123,7 @@ export function GirinGamePanel({
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clearVersion, game.currentRound, game.status, game.prompt, pixelsCleared]);
+  }, [clearVersion, game?.currentRound, game?.status, game?.prompt, pixelsCleared]);
 
   function pixelFromPoint(target: HTMLDivElement, clientX: number, clientY: number): GirinPixel | null {
     const rect = target.getBoundingClientRect();
@@ -200,7 +203,7 @@ export function GirinGamePanel({
     setPromptDraft("");
   }
 
-  const pixels = { ...(game.pixels ?? {}), ...localPixels };
+  const pixels = { ...(game?.pixels ?? {}), ...localPixels };
 
   return (
     <div data-girin-grid="true" className="h-full overflow-auto bg-[#f3f3f3] text-[#333]">
@@ -210,6 +213,14 @@ export function GirinGamePanel({
           className="relative overflow-hidden border border-[#b8b8b8] bg-[#fffdf7]"
           style={{ width: BOARD_WIDTH, height: BOARD_HEIGHT }}
         >
+          {game?.status === "drawing" && game.prompt && (
+            <div
+              data-girin-prompt-length="true"
+              className="pointer-events-none absolute left-1 top-1 z-10 border border-[#c8c8c8] bg-white/90 px-1.5 py-0.5 text-[11px] font-semibold text-[#555]"
+            >
+              글자 수: {Array.from(game.prompt).length}자
+            </div>
+          )}
           <div
             data-girin-pixel-board="true"
             data-girin-pixel-count={`${GIRIN_PIXEL_COLUMNS}x${GIRIN_PIXEL_ROWS}`}
@@ -245,7 +256,7 @@ export function GirinGamePanel({
             })}
           </div>
 
-          {game.status === "prompting" && isDrawer && (
+          {game?.status === "prompting" && isDrawer && (
             <form
               onSubmit={handlePromptSubmit}
               className="absolute left-1/2 top-1/2 z-10 flex w-[360px] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 border border-[#d0d0d0] bg-white p-5 shadow-sm"

@@ -41,6 +41,21 @@ describe("GirinGamePanel", () => {
     expect(markup).not.toContain("내가 그린 기린 그림");
   });
 
+  it("shows the empty pixel board before the game starts", () => {
+    const markup = renderToStaticMarkup(
+      <GirinGamePanel
+        game={null}
+        participantId="u1"
+        onSubmitPrompt={() => {}}
+        onDrawPixels={() => {}}
+        onTimeUp={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('data-girin-pixel-board="true"');
+    expect(markup).not.toContain("방장이 게임을 시작하면 순번이 무작위로 정해집니다.");
+  });
+
   it("creates a pixel with its cell coordinates and selected color", () => {
     expect(createGirinPixel(12, 34, "#e51c23")).toEqual({
       row: 12,
@@ -100,6 +115,7 @@ describe("GirinGamePanel", () => {
 
     expect(markup).toContain('data-girin-pixel-board="true"');
     expect(markup).toContain('data-girin-pixel-count="256x144"');
+    expect(markup).toContain("글자 수: 2자");
     expect(markup).not.toContain("<canvas");
     expect(markup).not.toContain("그림 그리기");
     expect(markup).not.toContain("남은 시간");

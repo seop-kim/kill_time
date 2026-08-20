@@ -517,6 +517,14 @@ export interface ParticipantGroups {
   observers: ChromeAvatar[];
 }
 
+export function getParticipantGroupsForGame(gameId: string, participants: ParticipantGroups): ParticipantGroups {
+  if (gameId !== "girin") return participants;
+  return {
+    players: [...participants.players, ...participants.observers],
+    observers: [],
+  };
+}
+
 export function ParticipantList({ participants }: { participants: ParticipantGroups }) {
   function renderGroup(label: string, entries: ChromeAvatar[]) {
     const onlineEntries = entries.filter((entry) => entry.online !== false);
@@ -550,7 +558,7 @@ export function ParticipantList({ participants }: { participants: ParticipantGro
   return (
     <>
       {renderGroup("게임 중", participants.players)}
-      {renderGroup("옵저버", participants.observers)}
+      {participants.observers.length > 0 && renderGroup("옵저버", participants.observers)}
     </>
   );
 }
@@ -919,7 +927,9 @@ export function ExcelChrome({
     }
   }, [eraserOpen, eraserAnchor]);
 
-  const profile = profileAvatar ?? avatars[0];
+  const displayParticipants = participants ? getParticipantGroupsForGame(activeGameId, participants) : undefined;
+  const displayAvatars = displayParticipants?.players ?? avatars;
+  const profile = profileAvatar ?? displayAvatars[0];
 
   return (
     <div
@@ -1044,7 +1054,7 @@ export function ExcelChrome({
               onMouseEnter={() => setAvatarTooltip(true)}
               onMouseLeave={() => setAvatarTooltip(false)}
             >
-              {avatars.map((a) => (
+              {displayAvatars.map((a) => (
                 <div
                   key={a.id ?? a.name}
                   className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] leading-none font-bold text-white ring-2 ring-white"
@@ -1056,10 +1066,10 @@ export function ExcelChrome({
               {avatarTooltip && (
                 <div className="absolute right-0 top-[22px] z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 px-2 w-[150px] text-[10px] text-[#333]">
                   <div className="text-[9px] text-[#999] px-1 pb-1">현재 참여자</div>
-                  {participants ? (
-                    <ParticipantList participants={participants} />
+                  {displayParticipants ? (
+                    <ParticipantList participants={displayParticipants} />
                   ) : (
-                    avatars.map((a) => (
+                    displayAvatars.map((a) => (
                       <div key={a.id ?? a.name} className="flex items-center gap-1.5 px-1 py-0.5">
                         <span
                           className="w-[7px] h-[7px] rounded-full shrink-0"
