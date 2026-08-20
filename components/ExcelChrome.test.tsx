@@ -57,6 +57,21 @@ describe("ExcelChrome", () => {
     expect(EXCEL_DESIGN_WIDTH * EXCEL_FHD_ZOOM).toBe(FHD_VIEWPORT_WIDTH);
   });
 
+  it("keeps the top tab rail at the fixed FHD design width", () => {
+    const markup = renderChrome();
+
+    expect(markup).toContain('data-excel-tab-row="true"');
+    expect(markup).toContain("min-w-[1440px]");
+    expect(markup).toContain("shrink-0");
+  });
+
+  it("scales the ribbon toolbar contents to fill the FHD width", () => {
+    const markup = renderChrome();
+
+    expect(markup).toContain('data-excel-toolbar-scale="1.1"');
+    expect(markup).toContain("zoom:1.1");
+  });
+
   it("keeps the ribbon at a fixed FHD width without responsive scrolling", () => {
     const markup = renderChrome();
 

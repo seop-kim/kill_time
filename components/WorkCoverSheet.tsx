@@ -37,6 +37,10 @@ const COLUMN_WIDTHS = [
   "w-[600px]",
 ];
 
+export function getWorkCoverColumnKey(width: string, index: number): string {
+  return `${width}-${index}`;
+}
+
 function FilterGlyph() {
   return (
     <span aria-hidden="true" className="inline-flex h-[20px] w-[20px] items-center justify-center rounded-[2px] border border-[#aeb9bd] bg-white text-[13px] leading-none text-[#555]">
@@ -51,7 +55,9 @@ export function WorkCoverSheet() {
       <table data-work-cover-grid="true" className="w-[1988px] min-w-[1988px] table-fixed border-collapse text-[15px] leading-[1.1]">
         <colgroup>
           <col className="w-[42px]" />
-          {COLUMN_WIDTHS.map((width) => <col key={width} className={width} />)}
+          {COLUMN_WIDTHS.map((width, index) => (
+            <col key={getWorkCoverColumnKey(width, index)} className={width} />
+          ))}
         </colgroup>
         <thead>
           <tr className="h-[28px]">

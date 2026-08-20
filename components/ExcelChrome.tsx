@@ -655,6 +655,7 @@ export function ProfileStatsDropdown({
 export const FHD_VIEWPORT_WIDTH = 1920;
 export const EXCEL_DESIGN_WIDTH = 1440;
 export const EXCEL_FHD_ZOOM = FHD_VIEWPORT_WIDTH / EXCEL_DESIGN_WIDTH;
+const RIBBON_TOOLBAR_SCALE = 1.1;
 
 const zoomStyle = { zoom: EXCEL_FHD_ZOOM } as React.CSSProperties;
 
@@ -1018,12 +1019,19 @@ export function ExcelChrome({
         </div>
 
         {/* row 2: ribbon tabs + collaboration cluster */}
-        <div className="flex items-center justify-between px-3 border-b border-[#d0d0d0] whitespace-nowrap">
-          <div className="flex gap-4 text-[11px] text-[#444] pt-1.5">
+        <div
+          data-excel-tab-row="true"
+          className="flex h-[30px] w-[1440px] min-w-[1440px] shrink-0 items-center justify-between border-b border-[#d0d0d0] px-3 whitespace-nowrap"
+        >
+          <div className="flex min-w-max shrink-0 gap-4 pt-1.5 text-[11px] text-[#444]">
             {RIBBON_TABS.map((tab) => (
               <span
                 key={tab}
-                className={tab === "홈" ? "text-[#185abd] font-semibold border-b-2 border-[#185abd] pb-1.5" : "pb-1.5"}
+                className={
+                  tab === "홈"
+                    ? "shrink-0 border-b-2 border-[#185abd] pb-1.5 font-semibold text-[#185abd]"
+                    : "shrink-0 pb-1.5"
+                }
               >
                 {tab}
               </span>
@@ -1106,6 +1114,11 @@ export function ExcelChrome({
 
         {/* row 3: ribbon toolbar */}
         <div className="flex items-stretch px-1 py-1 border-b border-[#d0d0d0] bg-gradient-to-b from-white to-[#f3f2f1] overflow-hidden whitespace-nowrap">
+          <div
+            data-excel-toolbar-scale={RIBBON_TOOLBAR_SCALE}
+            className="flex min-w-0 items-stretch"
+            style={{ width: `${100 / RIBBON_TOOLBAR_SCALE}%`, zoom: RIBBON_TOOLBAR_SCALE }}
+          >
           <div className="flex flex-col items-center gap-1 pr-1.5">
             <div className="flex items-center gap-1">
               <MiniBtn>
@@ -1402,6 +1415,7 @@ export function ExcelChrome({
                 )}
             </div>
             {onOpenChat && <CopilotButton onClick={onOpenChat} />}
+          </div>
           </div>
         </div>
       </div>
