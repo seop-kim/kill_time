@@ -35,8 +35,10 @@ import {
   subscribeChat,
   subscribeRoom,
   setRoomGame,
+  transferOfflineHostInRoom,
   toggleMatchParticipation,
   DISCONNECT_GRACE_MS,
+  PARTICIPANT_REMOVAL_GRACE_MS,
   TURN_SECONDS,
   type ChatMessage,
   type MatchParticipant,
@@ -45,14 +47,15 @@ import {
   type Room,
 } from "@/lib/rooms";
 import {
-  addGirinStroke,
+  addGirinPixel,
   advanceGirinRoundInRoom,
+  clearGirinPixels,
   resetGirinGame,
   startGirinGame,
   submitGirinAnswerToRoom,
   submitGirinPromptToRoom,
   type GirinGame,
-  type GirinStroke,
+  type GirinPixel,
 } from "@/lib/girin";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
@@ -72,6 +75,7 @@ import {
 } from "@/components/ExcelChrome";
 import { ChatPanel } from "@/components/ChatPanel";
 import { GirinGamePanel } from "@/components/GirinGamePanel";
+import { WorkCoverSheet } from "@/components/WorkCoverSheet";
 import { toggleChatOpen } from "@/lib/chat";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
@@ -106,7 +110,7 @@ function nameOfColor(color: Stone, room: Room): string | undefined {
 }
 
 function matchesIdentity(identity: StoredIdentity, participant: MatchParticipant): boolean {
-  if (participant.role === "host") return identity.role === "host";
+  if (participant.role === "host") return identity.role === "host" && (!identity.participantId || identity.participantId === participant.id);
   return identity.participantId === participant.id;
 }
 
@@ -116,7 +120,7 @@ function effectiveRoleOf(identity: StoredIdentity, room: Room): ParticipantRole 
     if (matchesIdentity(identity, room.gamePlayers.guest)) return "guest";
     return "spectator";
   }
-  if (identity.role === "host") return "host";
+  if (identity.role === "host" || (identity.participantId && room.host.id === identity.participantId)) return "host";
   const guestId = room.guest?.id;
   if (
     room.guest &&
@@ -130,7 +134,7 @@ function effectiveRoleOf(identity: StoredIdentity, room: Room): ParticipantRole 
 
 function participantForRole(role: PlayerRole, room: Room): MatchParticipant | null {
   if (room.gamePlayers) return room.gamePlayers[role];
-  if (role === "host") return { id: "host", name: room.host.name, role: "host" };
+  if (role === "host") return { id: room.host.id ?? "host", name: room.host.name, role: "host" };
   return room.guest ? { id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" } : null;
 }
 
@@ -159,7 +163,11 @@ export default function RoomClient({ code }: { code: string }) {
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
   const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
   const [drawingColor, setDrawingColor] = useState("#222222");
-  const [drawingWidth, setDrawingWidth] = useState(4);
+  const [drawingWidth, setDrawingWidth] = useState(1);
+  const [drawingEraser, setDrawingEraser] = useState(false);
+  const [eraserWidth, setEraserWidth] = useState(1);
+  const [drawingClearVersion, setDrawingClearVersion] = useState(0);
+  const [sensitiveMode, setSensitiveMode] = useState(false);
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
   const statsAttemptedRef = useRef<string | null>(null);
@@ -192,6 +200,14 @@ export default function RoomClient({ code }: { code: string }) {
     if (loaded.userId !== userId) saveIdentity(code, upgraded);
     setIdentity(upgraded);
   }, [code]);
+
+  useEffect(() => {
+    if (!identity || identity.role === "host" || !room?.host.id || identity.participantId !== room.host.id) return;
+    const promotedIdentity: StoredIdentity = { ...identity, role: "host" };
+    saveIdentity(code, promotedIdentity);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIdentity(promotedIdentity);
+  }, [code, identity, room?.host.id]);
 
   useEffect(() => {
     if (!identity?.userId) return undefined;
@@ -241,11 +257,12 @@ export default function RoomClient({ code }: { code: string }) {
   useEffect(() => {
     if (!identity || !effectiveRole) return;
     try {
-      return armPresence(code, identity.role, identity.participantId);
+      const isRoomHost = identity.role === "host" || identity.participantId === room?.host.id;
+      return armPresence(code, isRoomHost ? "host" : identity.role, identity.participantId);
     } catch {
       return undefined;
     }
-  }, [code, identity, effectiveRole]);
+  }, [code, identity, effectiveRole, room?.host.id]);
 
   useEffect(() => {
     if (!identity) return;
@@ -442,6 +459,13 @@ export default function RoomClient({ code }: { code: string }) {
       .filter(([id]) => room?.presence?.spectators?.[id] === false)
       .map(([id]) => id),
   });
+  const hostTransferKey = JSON.stringify({
+    hostOffline: room?.presence?.host === false,
+    guestId: room?.guest && room.presence?.guest !== false ? room.guest.id ?? "guest" : null,
+    spectatorIds: Object.entries(room?.spectators ?? {})
+      .filter(([id]) => room?.presence?.spectators?.[id] !== false)
+      .map(([id]) => id),
+  });
 
   useEffect(() => {
     // Skip the first observation so a room loaded with the opponent already
@@ -468,6 +492,17 @@ export default function RoomClient({ code }: { code: string }) {
   }, [opponentOnline, roomStatus, identity, playerRole, opponentRole, code]);
 
   useEffect(() => {
+    const transfer = JSON.parse(hostTransferKey) as { hostOffline: boolean };
+    if (!transfer.hostOffline) return undefined;
+
+    const timer = setTimeout(() => {
+      transferOfflineHostInRoom(code).catch(() => {});
+    }, PARTICIPANT_REMOVAL_GRACE_MS);
+
+    return () => clearTimeout(timer);
+  }, [code, hostTransferKey]);
+
+  useEffect(() => {
     const disconnected = JSON.parse(disconnectedParticipantKey) as {
       guestId: string | null;
       spectatorIds: string[];
@@ -483,7 +518,7 @@ export default function RoomClient({ code }: { code: string }) {
         removals.push(leaveRoom(code, "spectator", spectatorId));
       }
       Promise.all(removals).catch(() => {});
-    }, DISCONNECT_GRACE_MS);
+    }, PARTICIPANT_REMOVAL_GRACE_MS);
 
     return () => clearTimeout(timer);
   }, [code, disconnectedParticipantKey]);
@@ -537,7 +572,7 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("대기 중인 방에서만 대진에 참여할 수 있습니다.", "info");
       return;
     }
-    const participantId = identity.role === "host" ? "host" : identity.participantId;
+    const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
     if (!participantId || !getMatchParticipants(room).some((participant) => participant.id === participantId)) {
       showToast("현재 방 참여 정보를 확인할 수 없습니다.", "error");
       return;
@@ -564,7 +599,7 @@ export default function RoomClient({ code }: { code: string }) {
       }
       return;
     }
-    const participantId = identity.role === "host" ? "host" : identity.participantId;
+    const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
     const participant = participantId
       ? getMatchParticipants(room).find((candidate) => candidate.id === participantId)
       : undefined;
@@ -772,7 +807,7 @@ export default function RoomClient({ code }: { code: string }) {
     message
       .then(() => {
         const girin = room?.girinGame;
-        const participantId = identity.role === "host" ? "host" : identity.participantId;
+        const participantId = identity.role === "host" ? room?.host.id ?? "host" : identity.participantId;
         if (activeGameId === "girin" && girin?.status === "drawing" && participantId) {
           return submitGirinAnswerToRoom(code, participantId, text);
         }
@@ -835,10 +870,11 @@ export default function RoomClient({ code }: { code: string }) {
 
   const hostParticipant = participantForRole("host", room)!;
   const guestParticipant = participantForRole("guest", room);
+  const roomHostId = room.host.id ?? "host";
   const avatars: ChromeAvatar[] = [
-    { id: hostParticipant.id, name: hostParticipant.name, color: "#7b3fe4", isTurn: hostIsTurn, online: participantOnline(room, hostParticipant) !== false },
+    { id: hostParticipant.id, name: hostParticipant.name, color: "#7b3fe4", isTurn: hostIsTurn, isHost: hostParticipant.id === roomHostId, online: participantOnline(room, hostParticipant) !== false },
     ...(guestParticipant
-      ? [{ id: guestParticipant.id, name: guestParticipant.name, color: "#e4693f", isTurn: guestIsTurn, online: participantOnline(room, guestParticipant) !== false }]
+      ? [{ id: guestParticipant.id, name: guestParticipant.name, color: "#e4693f", isTurn: guestIsTurn, isHost: guestParticipant.id === roomHostId, online: participantOnline(room, guestParticipant) !== false }]
       : []),
   ];
 
@@ -851,9 +887,10 @@ export default function RoomClient({ code }: { code: string }) {
       name: participant.name,
       color: "#777",
       isTurn: false,
+      isHost: false,
       online: participantOnline(room, participant) !== false,
     }));
-  const myMatchParticipantId = identity.role === "host" ? "host" : identity.participantId ?? "";
+  const myMatchParticipantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId ?? "";
   const matchRequests = Object.keys(room.matchRequests ?? {}).filter((id) =>
     matchParticipants.some((participant) => participant.id === id),
   );
@@ -909,6 +946,26 @@ export default function RoomClient({ code }: { code: string }) {
     el.scrollTo({ left: Math.max(0, targetLeft), top: Math.max(0, targetTop) });
   }
 
+  function handleClearGirinDrawing() {
+    if (!room || !identity) {
+      showToast("현재 방 정보를 확인할 수 없습니다.", "error");
+      return;
+    }
+    const game = room.girinGame;
+    const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+    if (activeGameId !== "girin" || !game || game.status !== "drawing" || !participantId || game.currentParticipantId !== participantId) {
+      showToast("현재 출제자만 전체 지우기를 사용할 수 있습니다.", "error");
+      return;
+    }
+    setDrawingClearVersion((version) => version + 1);
+    clearGirinPixels(code).catch(() => showToast("그림을 전체 지우지 못했습니다.", "error"));
+  }
+
+  function handleSensitivityToggle() {
+    setSensitiveMode((enabled) => !enabled);
+    setChatOpen(false);
+  }
+
   return (
     <>
       <ExcelChrome
@@ -934,12 +991,23 @@ export default function RoomClient({ code }: { code: string }) {
         onOpenChat={() => setChatOpen(toggleChatOpen)}
         onRequestUndo={activeGameId === "omok" && playerRole ? handleRequestUndo : undefined}
         onRequestDraw={activeGameId === "omok" && playerRole ? handleRequestDraw : undefined}
+        sensitiveMode={sensitiveMode}
+        onToggleSensitivity={handleSensitivityToggle}
         drawingColor={drawingColor}
         onDrawingColorChange={setDrawingColor}
         drawingWidth={drawingWidth}
         onDrawingWidthChange={setDrawingWidth}
+        drawingEraser={drawingEraser}
+        onDrawingEraserChange={setDrawingEraser}
+        eraserWidth={eraserWidth}
+        onEraserWidthChange={setEraserWidth}
+        onClearDrawing={activeGameId === "girin" ? handleClearGirinDrawing : undefined}
       >
       <div className="relative flex-1 min-h-0 overflow-hidden">
+        {sensitiveMode ? (
+          <WorkCoverSheet />
+        ) : (
+          <>
         {activeGameId === "omok" && room.status === "waiting" && (
           <div className="absolute right-3 top-3 z-40">
             <MatchParticipationPanel
@@ -965,18 +1033,21 @@ export default function RoomClient({ code }: { code: string }) {
           room.girinGame ? (
             <GirinGamePanel
               game={room.girinGame}
-              participantId={identity.role === "host" ? "host" : identity.participantId ?? ""}
+              participantId={identity.role === "host" ? room.host.id ?? "host" : identity.participantId ?? ""}
               drawingColor={drawingColor}
               drawingWidth={drawingWidth}
+              drawingEraser={drawingEraser}
+              eraserWidth={eraserWidth}
+              clearVersion={drawingClearVersion}
               onSubmitPrompt={(prompt) => {
-                const participantId = identity.role === "host" ? "host" : identity.participantId;
+    const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
                 if (!participantId) return;
                 submitGirinPromptToRoom(code, participantId, prompt).catch(() =>
                   showToast("문제를 제출하지 못했습니다.", "error"),
                 );
               }}
-              onDrawStroke={(stroke: GirinStroke) => {
-                addGirinStroke(code, stroke).catch(() => showToast("그림을 저장하지 못했습니다.", "error"));
+              onDrawPixel={(pixel: GirinPixel) => {
+                addGirinPixel(code, pixel).catch(() => showToast("픽셀을 저장하지 못했습니다.", "error"));
               }}
               onTimeUp={() => {
                 advanceGirinRoundInRoom(code).catch(() => showToast("다음 문제로 넘어가지 못했습니다.", "error"));
@@ -1032,6 +1103,8 @@ export default function RoomClient({ code }: { code: string }) {
           myRole={effectiveRole ?? identity.role}
           onSend={handleSendChat}
         />
+          </>
+        )}
       </div>
       </ExcelChrome>
 

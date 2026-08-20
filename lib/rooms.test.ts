@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   canRequestUndo,
   DISCONNECT_GRACE_MS,
+  PARTICIPANT_REMOVAL_GRACE_MS,
   applyMatchParticipation,
   getMatchParticipants,
   getGameCandidates,
   normalizeRoomGameId,
   applyRoomGameSelection,
+  clearRoomIfEmpty,
   removeParticipantFromRoom,
+  transferOfflineHost,
   type Room,
 } from "./rooms";
 
@@ -103,11 +106,91 @@ describe("canRequestUndo", () => {
     expect(withoutObserver.spectators).toEqual({});
     expect(withoutObserver.presence?.spectators).toEqual({});
   });
+
+  it("promotes the online guest when the host leaves", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      spectators: { "spectator-1": { id: "spectator-1", name: "Observer" } },
+      presence: { host: false, guest: true, spectators: { "spectator-1": true } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    const promoted = transferOfflineHost(room);
+
+    expect(promoted.host).toEqual({ id: "guest-1", name: "Guest" });
+    expect(promoted.guest).toBeNull();
+    expect(promoted.presence).toEqual({ host: true, spectators: { "spectator-1": true } });
+    expect(promoted.matchRequests).toBeUndefined();
+    expect(getMatchParticipants(promoted)[0]).toEqual({ id: "guest-1", name: "Guest", role: "host" });
+  });
+
+  it("promotes the first online observer when the guest is unavailable", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest-1", name: "Offline guest" },
+      spectators: {
+        "spectator-1": { id: "spectator-1", name: "First observer" },
+        "spectator-2": { id: "spectator-2", name: "Second observer" },
+      },
+      presence: { host: false, guest: false, spectators: { "spectator-1": true, "spectator-2": false } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    const promoted = transferOfflineHost(room);
+
+    expect(promoted.host).toEqual({ id: "spectator-1", name: "First observer" });
+    expect(promoted.spectators).toEqual({ "spectator-2": { id: "spectator-2", name: "Second observer" } });
+    expect(promoted.presence?.host).toBe(true);
+    expect(promoted.presence?.spectators).toEqual({ "spectator-2": false });
+  });
 });
 
 describe("disconnect grace period", () => {
-  it("ends a disconnected game after 15 seconds", () => {
+  it("keeps game forfeit at 15 seconds and removes offline participants after 20 seconds", () => {
     expect(DISCONNECT_GRACE_MS).toBe(15000);
+    expect(PARTICIPANT_REMOVAL_GRACE_MS).toBe(20000);
+  });
+});
+
+describe("room cleanup", () => {
+  it("deletes the room when every participant is offline", () => {
+    const room: Room = {
+      host: { id: "host-1", name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      spectators: { "spectator-1": { id: "spectator-1", name: "Observer" } },
+      presence: { host: false, guest: false, spectators: { "spectator-1": false } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(clearRoomIfEmpty(room)).toBeNull();
+  });
+
+  it("keeps the room while at least one participant is online", () => {
+    const room: Room = {
+      host: { id: "host-1", name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      presence: { host: false, guest: true },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(clearRoomIfEmpty(room)).toBe(room);
   });
 });
 

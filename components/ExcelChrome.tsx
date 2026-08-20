@@ -350,9 +350,20 @@ function MiniBtn({ children, w }: { children: React.ReactNode; w?: number }) {
   );
 }
 
-function StackBtn({ label, icon }: { label: string; icon?: React.ReactNode }) {
+function StackBtn({ label, icon, onClick, selected, trigger, buttonRef }: { label: string; icon?: React.ReactNode; onClick?: () => void; selected?: boolean; trigger?: string; buttonRef?: React.Ref<HTMLButtonElement> }) {
+  const className = `flex items-center gap-1 text-[10px] text-[#444] hover:bg-[#e8e8e8] rounded-[2px] px-1 h-[16px] whitespace-nowrap ${selected ? "bg-[#e6f2ea] text-[#217346]" : ""}`;
+  if (onClick) {
+    return (
+      <button ref={buttonRef} type="button" aria-label={label} aria-pressed={selected} data-eraser-trigger={trigger} onClick={onClick} className={className}>
+        {icon ?? <div className="w-[10px] h-[10px] border border-[#9a9a9a] shrink-0" />}
+        <span>{label}</span>
+        <Chevron />
+      </button>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-1 text-[10px] text-[#444] hover:bg-[#e8e8e8] rounded-[2px] px-1 h-[16px] whitespace-nowrap">
+    <div className={className}>
       {icon ?? <div className="w-[10px] h-[10px] border border-[#9a9a9a] shrink-0" />}
       <span>{label}</span>
       <Chevron />
@@ -451,11 +462,53 @@ export function TextColorPalette({
   );
 }
 
+export function EraserPalette({
+  selectedWidth,
+  onSelect,
+  onClear,
+}: {
+  selectedWidth: number;
+  onSelect: (width: number) => void;
+  onClear?: () => void;
+}) {
+  return (
+    <div className="w-[170px] rounded-sm border border-[#d0d0d0] bg-white p-2 shadow-md">
+      <div className="mb-1.5 text-[10px] font-semibold text-[#555]">지우개 크기</div>
+      <div className="grid grid-cols-5 gap-1">
+        {DRAWING_WIDTHS.map((width) => (
+          <button
+            key={width}
+            type="button"
+            aria-label={`지우개 ${width}px`}
+            title={`${width}px 지우개`}
+            onClick={() => onSelect(width)}
+            className={`h-6 rounded-sm border text-[9px] ${selectedWidth === width ? "border-[#217346] bg-[#e6f2ea] text-[#217346]" : "border-[#c8c8c8] text-[#555] hover:bg-[#f3f3f3]"}`}
+          >
+            {width}px
+          </button>
+        ))}
+      </div>
+      {onClear && (
+        <button
+          type="button"
+          title="전체 지우기"
+          aria-label="전체 지우기"
+          onClick={onClear}
+          className="mt-2 w-full rounded-sm border border-[#d9534f] px-2 py-1 text-[10px] text-[#c0392b] hover:bg-[#fdecea]"
+        >
+          전체 지우기
+        </button>
+      )}
+    </div>
+  );
+}
+
 export interface ChromeAvatar {
   id?: string;
   name: string;
   color: string;
   isTurn: boolean;
+  isHost?: boolean;
   online?: boolean;
 }
 
@@ -473,12 +526,18 @@ export function ParticipantList({ participants }: { participants: ParticipantGro
         <div className="text-[9px] font-semibold text-[#555] px-1 pt-1 pb-0.5">{label}</div>
         {onlineEntries.length > 0 ? (
           onlineEntries.map((a) => (
-            <div key={a.id ?? a.name} className="flex items-center gap-1.5 px-1 py-0.5">
+            <div
+              key={a.id ?? a.name}
+              aria-current={a.isTurn ? "step" : undefined}
+              className={`flex items-center gap-1.5 rounded-[2px] px-1 py-0.5 ${a.isTurn ? "bg-[#e6f2ea] font-semibold text-[#217346]" : ""}`}
+            >
               <span
                 className="w-[7px] h-[7px] rounded-full shrink-0"
-                style={{ background: a.online === false ? "#bbb" : "#3aa757" }}
+                style={{ background: a.isTurn ? "#217346" : a.online === false ? "#bbb" : "#3aa757" }}
               />
-              <span className="truncate">{a.name}</span>
+              <span className="min-w-0 truncate">{a.name}</span>
+              {a.isHost && <span className="ml-auto shrink-0 text-[8px] text-[#217346]">방장</span>}
+              {a.isTurn && <span className={`${a.isHost ? "" : "ml-auto"} shrink-0 text-[8px] text-[#217346]`}>현재 차례</span>}
             </div>
           ))
         ) : (
@@ -764,10 +823,17 @@ export function ExcelChrome({
   onOpenChat,
   onRequestUndo,
   onRequestDraw,
+  sensitiveMode = false,
+  onToggleSensitivity,
   drawingColor = "#c00",
   onDrawingColorChange,
   drawingWidth = 4,
   onDrawingWidthChange,
+  drawingEraser = false,
+  onDrawingEraserChange,
+  eraserWidth = 1,
+  onEraserWidthChange,
+  onClearDrawing,
   children,
 }: {
   fileName: string;
@@ -792,16 +858,24 @@ export function ExcelChrome({
   onOpenChat?: () => void;
   onRequestUndo?: () => void;
   onRequestDraw?: () => void;
+  sensitiveMode?: boolean;
+  onToggleSensitivity?: () => void;
   drawingColor?: string;
   onDrawingColorChange?: (color: string) => void;
   drawingWidth?: number;
   onDrawingWidthChange?: (width: number) => void;
+  drawingEraser?: boolean;
+  onDrawingEraserChange?: (enabled: boolean) => void;
+  eraserWidth?: number;
+  onEraserWidthChange?: (width: number) => void;
+  onClearDrawing?: () => void;
   children: React.ReactNode;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [addinsOpen, setAddinsOpen] = useState(false);
   const [fontColorOpen, setFontColorOpen] = useState(false);
+  const [eraserOpen, setEraserOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -813,6 +887,10 @@ export function ExcelChrome({
   const [addinsPos, setAddinsPos] = useState<{ top: number; left: number } | null>(null);
   const fontColorButtonRef = useRef<HTMLButtonElement>(null);
   const [fontColorPos, setFontColorPos] = useState<{ top: number; left: number } | null>(null);
+  const eraserButtonRef = useRef<HTMLButtonElement>(null);
+  const editEraserButtonRef = useRef<HTMLButtonElement>(null);
+  const [eraserPos, setEraserPos] = useState<{ top: number; left: number } | null>(null);
+  const [eraserAnchor, setEraserAnchor] = useState<"toolbar" | "edit">("toolbar");
 
   useEffect(() => {
     if (addinsOpen && addinsButtonRef.current) {
@@ -827,6 +905,14 @@ export function ExcelChrome({
       setFontColorPos({ top: rect.bottom + 6, left: rect.left });
     }
   }, [fontColorOpen]);
+
+  useEffect(() => {
+    const anchorRef = eraserAnchor === "edit" ? editEraserButtonRef : eraserButtonRef;
+    if (eraserOpen && anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect();
+      setEraserPos({ top: rect.bottom + 6, left: rect.left });
+    }
+  }, [eraserOpen, eraserAnchor]);
 
   const profile = profileAvatar ?? avatars[0];
 
@@ -941,15 +1027,6 @@ export function ExcelChrome({
           </div>
 
           <div className="flex items-center gap-1 text-[10px] text-[#555]">
-            {typeof timerSeconds === "number" && (
-              <span
-                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm mr-1 tabular-nums ${
-                  timerSeconds <= 10 ? "text-[#c0392b] bg-[#fdecea]" : "text-[#555] bg-[#f0f0f0]"
-                }`}
-              >
-                {timerSeconds}s
-              </span>
-            )}
             <div
               className="relative flex items-center -space-x-1.5 mr-1"
               onMouseEnter={() => setAvatarTooltip(true)}
@@ -984,7 +1061,10 @@ export function ExcelChrome({
               )}
             </div>
             <TopBtn icon={<CommentIcon />} label="메모" />
-            <TopBtn icon={<HistoryIcon />} label="따라잡기" />
+            <TopBtn
+              icon={<HistoryIcon />}
+              label={typeof timerSeconds === "number" ? `따라잡기 · ${Math.max(0, timerSeconds)}초` : "따라잡기"}
+            />
             <TopBtn
               icon={<PencilIcon />}
               label={statusLabel}
@@ -1088,7 +1168,10 @@ export function ExcelChrome({
                   ref={fontColorButtonRef}
                   aria-label="선색 선택"
                   aria-expanded={fontColorOpen}
-                  onClick={() => setFontColorOpen((open) => !open)}
+                  onClick={() => {
+                    setEraserOpen(false);
+                    setFontColorOpen((open) => !open);
+                  }}
                   className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center gap-[1px] rounded-[2px] text-[10px] text-[#555] hover:bg-[#e8e8e8]"
                 >
                   <span style={{ color: drawingColor }}>가</span>
@@ -1105,6 +1188,7 @@ export function ExcelChrome({
                           selectedColor={drawingColor}
                           onSelect={(color) => {
                             onDrawingColorChange?.(color);
+                            onDrawingEraserChange?.(false);
                             setFontColorOpen(false);
                           }}
                         />
@@ -1125,6 +1209,51 @@ export function ExcelChrome({
                   </option>
                 ))}
               </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  ref={eraserButtonRef}
+                  aria-label="지우개"
+                  data-eraser-trigger="toolbar"
+                  aria-expanded={eraserOpen}
+                  aria-pressed={drawingEraser}
+                  title="지우개"
+                  onClick={() => {
+                    setEraserAnchor("toolbar");
+                    onDrawingEraserChange?.(true);
+                    setEraserOpen((open) => !open);
+                  }}
+                  className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[2px] text-[#555] hover:bg-[#e8e8e8] ${drawingEraser ? "bg-[#e6f2ea] text-[#217346]" : ""}`}
+                >
+                  <EraserIcon />
+                </button>
+                {eraserOpen &&
+                  eraserPos &&
+                  createPortal(
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setEraserOpen(false)} />
+                      <div className="fixed z-50" style={{ top: eraserPos.top, left: eraserPos.left }}>
+                        <EraserPalette
+                          selectedWidth={eraserWidth}
+                          onSelect={(width) => {
+                            onEraserWidthChange?.(width);
+                            onDrawingEraserChange?.(true);
+                            setEraserOpen(false);
+                          }}
+                          onClear={
+                            onClearDrawing
+                              ? () => {
+                                  onClearDrawing();
+                                  setEraserOpen(false);
+                                }
+                              : undefined
+                          }
+                        />
+                      </div>
+                    </>,
+                    document.body,
+                  )}
+              </div>
               <MiniBtn>
                 <BorderIcon />
                 <Chevron />
@@ -1201,7 +1330,18 @@ export function ExcelChrome({
             <div className="flex items-center gap-3">
               <div className="flex flex-col gap-[3px]">
                 <StackBtn label="자동 합계" icon={<SumIcon />} />
-                <StackBtn label="지우기" icon={<EraserIcon />} />
+                <StackBtn
+                  label="지우기"
+                  icon={<EraserIcon />}
+                  selected={drawingEraser}
+                  trigger="edit"
+                  buttonRef={editEraserButtonRef}
+                  onClick={() => {
+                    setEraserAnchor("edit");
+                    onDrawingEraserChange?.(true);
+                    setEraserOpen(true);
+                  }}
+                />
               </div>
               <div className="flex flex-col gap-[3px]">
                 <StackBtn label="정렬 및 필터" icon={<FunnelIcon />} />
@@ -1212,13 +1352,20 @@ export function ExcelChrome({
           </div>
           <Divider />
 
-          <div className="flex flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] px-1">
+          <button
+            type="button"
+            aria-label="민감도 화면 전환"
+            aria-pressed={sensitiveMode}
+            title="민감도 화면 전환"
+            onClick={onToggleSensitivity}
+            className={`flex flex-col items-center justify-center gap-0.5 rounded-[2px] px-1 text-[9px] ${sensitiveMode ? "bg-[#e6f2ea] text-[#217346]" : "text-[#555] hover:bg-[#e8e8e8]"}`}
+          >
             <ShieldIcon />
             <span className="flex items-center">
               민감도
               <Chevron />
             </span>
-          </div>
+          </button>
           <div className="flex items-start gap-1 self-center">
             <div className="relative flex flex-col items-center justify-center">
               <button
@@ -1263,25 +1410,31 @@ export function ExcelChrome({
           <ChevronLeft />
           <ChevronRight />
           <HamburgerIcon />
-          {games.map((g) => (
-            <button
-              key={g.id}
-              onClick={() => onSelectGame(g.id)}
-              className={
-                g.id === activeGameId
-                  ? "bg-[#e8f0fe] text-[#217346] font-semibold border-t-2 border-[#217346] px-3 py-1 rounded-t-sm"
-                  : g.available
-                    ? "text-[#666] px-2 py-1 hover:bg-[#f0f0f0] rounded-t-sm"
-                    : "text-[#bbb] px-2 py-1"
-              }
-            >
-              {g.label}
-            </button>
-          ))}
-          <span className="px-1">
+          {sensitiveMode ? (
+            <span className="bg-[#e8f0fe] text-[#217346] font-semibold border-t-2 border-[#217346] px-3 py-1 rounded-t-sm">
+              IT 운영 현황
+            </span>
+          ) : (
+            games.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => onSelectGame(g.id)}
+                className={
+                  g.id === activeGameId
+                    ? "bg-[#e8f0fe] text-[#217346] font-semibold border-t-2 border-[#217346] px-3 py-1 rounded-t-sm"
+                    : g.available
+                      ? "text-[#666] px-2 py-1 hover:bg-[#f0f0f0] rounded-t-sm"
+                      : "text-[#bbb] px-2 py-1"
+                }
+              >
+                {g.label}
+              </button>
+            ))
+          )}
+          {!sensitiveMode && <span className="px-1">
             <PlusSmall />
-          </span>
-          {onRematch && (
+          </span>}
+          {!sensitiveMode && onRematch && (
             <button
               onClick={onRematch}
               className="ml-auto text-[11px] bg-[#217346] hover:bg-[#1a5c38] text-white rounded-sm px-3 py-1"

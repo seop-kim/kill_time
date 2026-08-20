@@ -66,7 +66,10 @@ export interface GameCandidate {
 
 export const ROOM_CODE_LENGTH = 6;
 export const TURN_SECONDS = 30;
+/** Time before a disconnected game is forfeited. */
 export const DISCONNECT_GRACE_MS = 15000;
+/** Time an offline guest or spectator remains in the room before removal. */
+export const PARTICIPANT_REMOVAL_GRACE_MS = 20000;
 
 export function normalizeRoomGameId(value: unknown): RoomGameId {
   return value === "girin" ? "girin" : "omok";
@@ -111,7 +114,7 @@ export function getGameCandidates(room: Room): GameCandidate[] {
 }
 
 export function getMatchParticipants(room: Room): MatchParticipant[] {
-  const participants: MatchParticipant[] = [{ id: "host", name: room.host.name, role: "host" }];
+  const participants: MatchParticipant[] = [{ id: room.host.id ?? "host", name: room.host.name, role: "host" }];
   if (room.guest) participants.push({ id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" });
   for (const [id, spectator] of Object.entries(room.spectators ?? {})) {
     participants.push({ id, name: spectator.name, role: "spectator" });
@@ -200,6 +203,59 @@ export function removeParticipantFromRoom(
     delete nextRoom.matchRequests[participantId];
     if (Object.keys(nextRoom.matchRequests).length === 0) delete nextRoom.matchRequests;
   }
+  return nextRoom;
+}
+
+/** Returns null when no room participant is still online. */
+export function clearRoomIfEmpty(room: Room): Room | null {
+  const hostOnline = room.presence?.host !== false;
+  const guestOnline = Boolean(room.guest && room.presence?.guest !== false);
+  const observerOnline = Object.entries(room.spectators ?? {}).some(
+    ([id]) => room.presence?.spectators?.[id] !== false,
+  );
+
+  return hostOnline || guestOnline || observerOnline ? room : null;
+}
+
+export function transferOfflineHost(room: Room): Room {
+  if (room.presence?.host !== false) return room;
+
+  const onlineGuest = room.guest && room.presence?.guest !== false
+    ? { id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" as const }
+    : null;
+  const onlineObserver = Object.entries(room.spectators ?? {})
+    .find(([id]) => room.presence?.spectators?.[id] !== false);
+  const candidate = onlineGuest ?? (onlineObserver
+    ? { id: onlineObserver[0], name: onlineObserver[1].name, role: "spectator" as const }
+    : null);
+
+  if (!candidate) return room;
+
+  const nextRoom: Room = {
+    ...room,
+    host: { id: candidate.id, name: candidate.name },
+    presence: { ...(room.presence ?? {}), host: true },
+  };
+  if (room.spectators) nextRoom.spectators = { ...room.spectators };
+
+  if (candidate.role === "guest") {
+    nextRoom.guest = null;
+    if (nextRoom.presence) delete nextRoom.presence.guest;
+  } else {
+    delete nextRoom.spectators?.[candidate.id];
+    if (nextRoom.presence?.spectators) {
+      nextRoom.presence.spectators = { ...nextRoom.presence.spectators };
+      delete nextRoom.presence.spectators[candidate.id];
+    }
+  }
+
+  if (room.matchRequests) {
+    nextRoom.matchRequests = { ...room.matchRequests };
+    delete nextRoom.matchRequests[candidate.id];
+    delete nextRoom.matchRequests[room.host.id ?? "host"];
+    if (Object.keys(nextRoom.matchRequests).length === 0) delete nextRoom.matchRequests;
+  }
+
   return nextRoom;
 }
 
@@ -319,7 +375,16 @@ export async function toggleMatchParticipation(
 export async function leaveRoom(code: string, role: ParticipantRole, participantId?: string): Promise<void> {
   await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room) return room;
-    return removeParticipantFromRoom(room, role, participantId);
+
+    if (role === "host") {
+      const hostLeft = {
+        ...room,
+        presence: { ...(room.presence ?? {}), host: false },
+      };
+      return clearRoomIfEmpty(transferOfflineHost(hostLeft));
+    }
+
+    return clearRoomIfEmpty(removeParticipantFromRoom(room, role, participantId));
   });
 }
 
@@ -327,6 +392,13 @@ export async function leaveRoom(code: string, role: ParticipantRole, participant
 export function subscribeRoom(code: string, callback: (room: Room | null) => void): () => void {
   return onValue(roomRef(code), (snap) => {
     callback(snap.exists() ? (snap.val() as Room) : null);
+  });
+}
+
+export async function transferOfflineHostInRoom(code: string): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room) return room;
+    return clearRoomIfEmpty(transferOfflineHost(room));
   });
 }
 

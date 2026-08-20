@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AddinsMenuItems,
   CopilotButton,
+  EraserPalette,
   ExcelChrome,
   MatchParticipationPanel,
   ParticipantList,
@@ -106,6 +107,76 @@ describe("ExcelChrome", () => {
     expect(markup).toContain("6px");
   });
 
+  it("provides a local sensitivity-screen toggle", () => {
+    const markup = renderToStaticMarkup(
+      <ExcelChrome
+        fileName="test.xlsx"
+        avatars={[]}
+        onShare={() => {}}
+        games={[{ id: "girin", label: "girin", available: true }]}
+        activeGameId="girin"
+        onSelectGame={() => {}}
+        sensitiveMode={false}
+        onToggleSensitivity={() => {}}
+      >
+        <div>cell area</div>
+      </ExcelChrome>,
+    );
+
+    expect(markup).toContain('aria-label="민감도 화면 전환"');
+    expect(markup).toContain('aria-pressed="false"');
+  });
+
+  it("provides a pixel eraser toggle", () => {
+    const markup = renderToStaticMarkup(
+      <ExcelChrome
+        fileName="test.xlsx"
+        avatars={[]}
+        onShare={() => {}}
+        games={[{ id: "girin", label: "girin", available: true }]}
+        activeGameId="girin"
+        onSelectGame={() => {}}
+        drawingEraser
+        onDrawingEraserChange={() => {}}
+      >
+        <div>cell area</div>
+      </ExcelChrome>,
+    );
+
+    expect(markup).toContain('aria-label="지우개"');
+    expect(markup).toContain('aria-pressed="true"');
+  });
+
+  it("turns the edit-area 지우기 button into the same eraser tool", () => {
+    const markup = renderToStaticMarkup(
+      <ExcelChrome
+        fileName="test.xlsx"
+        avatars={[]}
+        onShare={() => {}}
+        games={[{ id: "girin", label: "girin", available: true }]}
+        activeGameId="girin"
+        onSelectGame={() => {}}
+        drawingEraser
+        onDrawingEraserChange={() => {}}
+      >
+        <div>cell area</div>
+      </ExcelChrome>,
+    );
+
+    expect(markup).toContain('data-eraser-trigger="edit"');
+  });
+
+  it("shows eraser sizes and a whole-canvas clear action", () => {
+    const markup = renderToStaticMarkup(
+      <EraserPalette selectedWidth={4} onSelect={() => {}} onClear={() => {}} />,
+    );
+
+    expect(markup).toContain("지우개 크기");
+    expect(markup).toContain('aria-label="지우개 4px"');
+    expect(markup).toContain('title="전체 지우기"');
+    expect(markup).toContain("전체 지우기");
+  });
+
   it("keeps chat out of the Add-ins menu", () => {
     const markup = renderToStaticMarkup(
       <AddinsMenuItems onRequestUndo={() => {}} onRequestDraw={() => {}} onClose={() => {}} />,
@@ -148,6 +219,59 @@ describe("ExcelChrome", () => {
     expect(participantMarkup).toContain("게임 중");
     expect(participantMarkup).toContain("옵저버");
     expect(participantMarkup).toContain("Observer");
+  });
+
+  it("shows the current turn time beside 따라잡기", () => {
+    const markup = renderToStaticMarkup(
+      <ExcelChrome
+        fileName="test.xlsx"
+        avatars={[]}
+        timerSeconds={27}
+        onShare={() => {}}
+        games={[{ id: "omok", label: "Omok", available: true }]}
+        activeGameId="omok"
+        onSelectGame={() => {}}
+      >
+        <div>cell area</div>
+      </ExcelChrome>,
+    );
+
+    expect(markup).toContain("따라잡기 · 27초");
+  });
+
+  it("marks the participant whose turn is active", () => {
+    const markup = renderToStaticMarkup(
+      <ParticipantList
+        participants={{
+          players: [
+            { id: "host", name: "Host", color: "#217346", isTurn: true },
+            { id: "guest", name: "Guest", color: "#e4693f", isTurn: false },
+          ],
+          observers: [],
+        }}
+      />,
+    );
+
+    expect(markup).toContain('aria-current="step"');
+    expect(markup).toContain("현재 차례");
+    expect(markup).toContain("Host");
+  });
+
+  it("marks the room host in the participant list", () => {
+    const markup = renderToStaticMarkup(
+      <ParticipantList
+        participants={{
+          players: [
+            { id: "host", name: "Host", color: "#217346", isTurn: false, isHost: true },
+            { id: "guest", name: "Guest", color: "#e4693f", isTurn: false },
+          ],
+          observers: [],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("방장");
+    expect(markup).toContain("Host");
   });
 
   it("highlights the waiting status button when it can start a game", () => {

@@ -1,10 +1,13 @@
-import { onValue, push, ref, runTransaction, set, update } from "firebase/database";
+import { onValue, ref, runTransaction, set, update } from "firebase/database";
 import { getDb } from "./firebase";
 import type { MatchParticipant, ParticipantRole } from "./rooms";
 
 export const GIRIN_TURN_SECONDS = 300;
 export const GIRIN_PROMPT_MAX_LENGTH = 8;
-export const DEFAULT_GIRIN_STROKE_COLOR = "#222";
+export const DEFAULT_GIRIN_PIXEL_COLOR = "#222";
+export const GIRIN_PIXEL_COLUMNS = 256;
+export const GIRIN_PIXEL_ROWS = 144;
+export const GIRIN_PIXEL_SIZE = 5;
 
 export interface GirinParticipant {
   id: string;
@@ -13,19 +16,73 @@ export interface GirinParticipant {
   order: number;
 }
 
-export interface GirinPoint {
-  x: number;
-  y: number;
+export interface GirinPixel {
+  row: number;
+  col: number;
+  color: string | null;
 }
 
-export interface GirinStroke {
-  points: GirinPoint[];
-  color: string;
-  width: number;
+export function createGirinPixel(row: number, col: number, color: string | null = DEFAULT_GIRIN_PIXEL_COLOR): GirinPixel {
+  return { row, col, color };
 }
 
-export function createGirinStroke(points: GirinPoint[], color = DEFAULT_GIRIN_STROKE_COLOR, width = 4): GirinStroke {
-  return { points, color, width };
+export function girinPixelKey(row: number, col: number): string {
+  return `${row}-${col}`;
+}
+
+export function createGirinLinePixels(
+  startRow: number,
+  startCol: number,
+  endRow: number,
+  endCol: number,
+): Array<{ row: number; col: number }> {
+  const pixels: Array<{ row: number; col: number }> = [];
+  const rowDistance = Math.abs(endRow - startRow);
+  const colDistance = Math.abs(endCol - startCol);
+  const rowStep = startRow < endRow ? 1 : -1;
+  const colStep = startCol < endCol ? 1 : -1;
+  let row = startRow;
+  let col = startCol;
+  let error = colDistance - rowDistance;
+
+  while (true) {
+    if (row >= 0 && row < GIRIN_PIXEL_ROWS && col >= 0 && col < GIRIN_PIXEL_COLUMNS) {
+      pixels.push({ row, col });
+    }
+    if (row === endRow && col === endCol) break;
+
+    const doubleError = error * 2;
+    if (doubleError > -rowDistance) {
+      error -= rowDistance;
+      col += colStep;
+    }
+    if (doubleError < colDistance) {
+      error += colDistance;
+      row += rowStep;
+    }
+  }
+
+  return pixels;
+}
+
+export function createGirinBrushPixels(
+  row: number,
+  col: number,
+  brushSize: number,
+  color: string | null,
+): GirinPixel[] {
+  const size = Math.max(1, Math.min(8, Math.round(brushSize)));
+  const radius = Math.floor((size - 1) / 2);
+  const pixels: GirinPixel[] = [];
+
+  for (let pixelRow = row - radius; pixelRow < row - radius + size; pixelRow += 1) {
+    for (let pixelCol = col - radius; pixelCol < col - radius + size; pixelCol += 1) {
+      if (pixelRow < 0 || pixelRow >= GIRIN_PIXEL_ROWS || pixelCol < 0 || pixelCol >= GIRIN_PIXEL_COLUMNS) continue;
+      pixels.push(createGirinPixel(pixelRow, pixelCol, color));
+    }
+  }
+
+  return pixels;
 }
 
 export type GirinRoundOutcome = "answered" | "stumped";
@@ -48,7 +105,7 @@ export interface GirinGame {
   currentRound: number;
   prompt?: string;
   turnStartedAt?: number;
-  strokes: Record<string, GirinStroke>;
+  pixels?: Record<string, GirinPixel>;
   winnerId?: string;
   finishedAt?: number;
   lastRoundResult?: GirinRoundResult;
@@ -58,7 +115,7 @@ function cloneGame(game: GirinGame): GirinGame {
   return {
     ...game,
     participants: { ...game.participants },
-    strokes: { ...game.strokes },
+    pixels: { ...(game.pixels ?? {}) },
   };
 }
 
@@ -86,7 +143,7 @@ export function createGirinGame(
     participants: Object.fromEntries(ordered.map((participant) => [participant.id, participant])),
     currentParticipantId: ordered[0].id,
     currentRound: 1,
-    strokes: {},
+    pixels: {},
   };
 }
 
@@ -108,7 +165,7 @@ export function submitGirinPrompt(
   next.status = "drawing";
   next.prompt = trimmedPrompt;
   next.turnStartedAt = now;
-  next.strokes = {};
+  next.pixels = {};
   return next;
 }
 
@@ -143,7 +200,7 @@ function completeGirinRound(
   delete next.prompt;
   delete next.turnStartedAt;
   delete next.winnerId;
-  next.strokes = {};
+  next.pixels = {};
   return next;
 }
 
@@ -200,9 +257,13 @@ export async function advanceGirinRoundInRoom(code: string): Promise<void> {
   });
 }
 
-export async function addGirinStroke(code: string, stroke: GirinStroke): Promise<void> {
-  const strokeRef = push(ref(getDb(), `rooms/${code}/girinGame/strokes`));
-  await set(strokeRef, stroke);
+export async function addGirinPixel(code: string, pixel: GirinPixel): Promise<void> {
+  const pixelRef = ref(getDb(), `rooms/${code}/girinGame/pixels/${girinPixelKey(pixel.row, pixel.col)}`);
+  await set(pixelRef, pixel.color === null ? null : pixel);
+}
+
+export async function clearGirinPixels(code: string): Promise<void> {
+  await set(ref(getDb(), `rooms/${code}/girinGame/pixels`), null);
 }
 
 export function subscribeGirinGame(code: string, callback: (game: GirinGame | null) => void): () => void {

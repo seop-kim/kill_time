@@ -3,7 +3,10 @@ import {
   GIRIN_PROMPT_MAX_LENGTH,
   GIRIN_TURN_SECONDS,
   advanceGirinRound,
+  createGirinPixel,
   createGirinGame,
+  createGirinLinePixels,
+  girinPixelKey,
   submitGirinAnswer,
   submitGirinPrompt,
   type GirinParticipant,
@@ -16,6 +19,29 @@ const participants: GirinParticipant[] = [
 ];
 
 describe("내가 그린 기린 그림 game state", () => {
+  it("represents a pixel by its row, column, and color", () => {
+    expect(createGirinPixel(12, 34, "#e51c23")).toEqual({ row: 12, col: 34, color: "#e51c23" });
+    expect(girinPixelKey(12, 34)).toBe("12-34");
+  });
+
+  it("fills every pixel between fast pointer positions", () => {
+    expect(createGirinLinePixels(12, 34, 12, 39)).toEqual([
+      { row: 12, col: 34 },
+      { row: 12, col: 35 },
+      { row: 12, col: 36 },
+      { row: 12, col: 37 },
+      { row: 12, col: 38 },
+      { row: 12, col: 39 },
+    ]);
+
+    expect(createGirinLinePixels(10, 10, 13, 13)).toEqual([
+      { row: 10, col: 10 },
+      { row: 11, col: 11 },
+      { row: 12, col: 12 },
+      { row: 13, col: 13 },
+    ]);
+  });
+
   it("randomly assigns every participant a unique order at game start", () => {
     const game = createGirinGame(participants, 1000, () => 0.42);
     const ordered = Object.values(game.participants).map((participant) => participant.order).sort();
@@ -33,6 +59,7 @@ describe("내가 그린 기린 그림 game state", () => {
     expect(prompt.status).toBe("drawing");
     expect(prompt.prompt).toBe("기린그림");
     expect(prompt.turnStartedAt).toBe(2000);
+    expect(prompt.pixels).toEqual({});
     expect(GIRIN_PROMPT_MAX_LENGTH).toBe(8);
     expect(GIRIN_TURN_SECONDS).toBe(300);
   });
