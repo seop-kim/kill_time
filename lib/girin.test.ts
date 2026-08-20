@@ -7,6 +7,7 @@ import {
   createGirinGame,
   createGirinLinePixels,
   finishGirinGameIfSolo,
+  getGirinTurnToastMessage,
   girinPixelKey,
   submitGirinAnswer,
   submitGirinPrompt,
@@ -125,5 +126,41 @@ describe("내가 그린 기린 그림 game state", () => {
     const participantIds = Object.keys(game.participants).slice(0, 2);
 
     expect(finishGirinGameIfSolo(game, participantIds)).toBe(game);
+  });
+
+  it("announces the first questioner when the game starts", () => {
+    const game = createGirinGame(participants, 1000, () => 0.42);
+    const questioner = game.participants[game.currentParticipantId];
+
+    expect(getGirinTurnToastMessage(null, game)).toBe(
+      `${questioner.order}번 ${questioner.name}님이 출제자입니다. 문제를 작성해 주세요.`,
+    );
+  });
+
+  it("announces when the questioner submits a prompt and drawing begins", () => {
+    const game = createGirinGame(participants, 1000, () => 0.42);
+    const drawing = submitGirinPrompt(game, game.currentParticipantId, "기린", 2000);
+    const questioner = drawing.participants[drawing.currentParticipantId];
+
+    expect(getGirinTurnToastMessage(game, drawing)).toBe(
+      `${questioner.order}번 ${questioner.name}님이 문제를 작성했습니다. 그림 그리기를 시작합니다.`,
+    );
+  });
+
+  it("announces the next questioner when a round changes", () => {
+    const game = createGirinGame(participants, 1000, () => 0.42);
+    const drawing = submitGirinPrompt(game, game.currentParticipantId, "기린", 2000);
+    const next = advanceGirinRound(drawing, 302000);
+    const questioner = next.participants[next.currentParticipantId];
+
+    expect(getGirinTurnToastMessage(drawing, next)).toBe(
+      `${questioner.order}번 ${questioner.name}님이 출제자입니다. 문제를 작성해 주세요.`,
+    );
+  });
+
+  it("does not announce unchanged Girin state", () => {
+    const game = createGirinGame(participants, 1000, () => 0.42);
+
+    expect(getGirinTurnToastMessage(game, game)).toBeNull();
   });
 });
