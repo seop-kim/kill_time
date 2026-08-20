@@ -259,6 +259,26 @@ describe("ExcelChrome", () => {
     expect(participantMarkup).not.toContain("옵저버");
   });
 
+  it("renders host-only kick actions when participant removal is enabled", () => {
+    const participantMarkup = renderToStaticMarkup(
+      <ParticipantList
+        participants={{
+          players: [
+            { id: "host", name: "Host", color: "#217346", isTurn: false, isHost: true },
+            { id: "guest", name: "Guest", color: "#e4693f", isTurn: false },
+          ],
+          observers: [],
+        }}
+        canKick
+        onKick={() => {}}
+      />,
+    );
+
+    expect(participantMarkup).toContain("Guest 추방");
+    expect(participantMarkup).toContain("추방");
+    expect(participantMarkup).not.toContain("Host 추방");
+  });
+
   it("shows the current turn time beside 따라잡기", () => {
     const markup = renderToStaticMarkup(
       <ExcelChrome

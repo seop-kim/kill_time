@@ -72,6 +72,10 @@ export interface Room {
   matchRequests?: Record<string, MatchParticipant>;
   /** the two participants currently assigned to the game slots */
   gamePlayers?: { host: MatchParticipant; guest: MatchParticipant };
+  /** participants removed by the host while the room is waiting */
+  kickedParticipants?: Record<string, { name: string; kickedAt: number }>;
+  /** Reserved for money-stake games such as Seotda. */
+  moneyStake?: number;
   girinGame?: GirinGame;
   undoRequest?: PlayerRole | null;
   drawRequest?: PlayerRole | null;
@@ -224,6 +228,32 @@ export function removeParticipantFromRoom(
     if (Object.keys(nextRoom.matchRequests).length === 0) delete nextRoom.matchRequests;
   }
   return nextRoom;
+}
+
+/**
+ * Removes a participant at the host's request. Kicking is deliberately only
+ * available while waiting: once a match starts, leaving is handled by the
+ * game's forfeit/settlement rules instead of changing the roster mid-game.
+ */
+export function kickParticipantFromRoom(
+  room: Room,
+  requesterRole: ParticipantRole,
+  target: MatchParticipant,
+  now = Date.now(),
+): Room {
+  if (requesterRole !== "host" || room.status !== "waiting" || target.role === "host") return room;
+
+  const current = getMatchParticipants(room).find((participant) => participant.id === target.id);
+  if (!current || current.role !== target.role) return room;
+
+  const nextRoom = removeParticipantFromRoom(room, target.role, target.id);
+  return {
+    ...nextRoom,
+    kickedParticipants: {
+      ...(room.kickedParticipants ?? {}),
+      [target.id]: { name: current.name, kickedAt: now },
+    },
+  };
 }
 
 /** Returns null when no room participant is still online. */
@@ -562,6 +592,21 @@ export async function sendChatMessage(
   if (!messageRef.key) throw new Error("채팅 메시지 키를 생성하지 못했습니다.");
 
   await update(ref(db), buildChatLogUpdates(code, messageRef.key, msg, Date.now()));
+}
+
+export async function kickParticipant(
+  code: string,
+  targetRole: Exclude<ParticipantRole, "host">,
+  participantId: string,
+): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room) return room;
+    const target = getMatchParticipants(room).find(
+      (participant) => participant.id === participantId && participant.role === targetRole,
+    );
+    if (!target) return room;
+    return kickParticipantFromRoom(room, "host", target);
+  });
 }
 
 export function subscribeChat(code: string, callback: (messages: ChatMessage[]) => void): () => void {

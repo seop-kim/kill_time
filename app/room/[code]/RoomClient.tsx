@@ -22,6 +22,7 @@ import {
   cancelUndoRequest,
   forfeit,
   getMatchParticipants,
+  kickParticipant,
   joinRoom,
   leaveRoom,
   normalizeRoomGameId,
@@ -57,6 +58,8 @@ import {
   submitGirinPromptToRoom,
   type GirinGame,
 } from "@/lib/girin";
+import { getGirinCoinReward, getOmokCoinReward } from "@/lib/economy";
+import { settleCoinReward } from "@/lib/wallet";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
   recordGameResult,
@@ -162,6 +165,7 @@ export default function RoomClient({ code }: { code: string }) {
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
   const [showMoveTag, setShowMoveTag] = useState(false);
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
+  const [kickTarget, setKickTarget] = useState<MatchParticipant | null>(null);
   const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
   const [drawingColor, setDrawingColor] = useState("#222222");
   const [drawingWidth, setDrawingWidth] = useState(1);
@@ -173,6 +177,7 @@ export default function RoomClient({ code }: { code: string }) {
   const prevStatusRef = useRef<Room["status"] | null>(null);
   const statsAttemptedRef = useRef<string | null>(null);
   const girinQuizAttemptedRef = useRef<string | null>(null);
+  const walletRewardAttemptedRef = useRef<Set<string>>(new Set());
   const prevGirinStatusRef = useRef<GirinGame["status"] | null>(null);
   const prevGirinGameRef = useRef<GirinGame | null>(null);
   const hasConnectedOnceRef = useRef(false);
@@ -184,6 +189,7 @@ export default function RoomClient({ code }: { code: string }) {
   const opponentPresenceInitRef = useRef(false);
   const prevOpponentOnlineRef = useRef<boolean | undefined>(undefined);
   const centeredOnceRef = useRef(false);
+  const kickedOutRef = useRef(false);
 
   const effectiveRole = room && identity ? effectiveRoleOf(identity, room) : null;
   const playerRole: PlayerRole | null = effectiveRole === "host" || effectiveRole === "guest" ? effectiveRole : null;
@@ -320,6 +326,17 @@ export default function RoomClient({ code }: { code: string }) {
     recordGameResult(identity.userId, identity.name, "omok", result, resultId).catch(() => {
       showToast("전적을 저장하지 못했습니다.", "error");
     });
+
+    const rewardAmount = getOmokCoinReward(result);
+    const rewardKey = `omok:${resultId}`;
+    if (!walletRewardAttemptedRef.current.has(rewardKey)) {
+      walletRewardAttemptedRef.current.add(rewardKey);
+      settleCoinReward(identity.userId, "omok", resultId, rewardAmount)
+        .then((settled) => {
+          if (settled) showToast(`오목 결과 보상 ${rewardAmount} coin을 받았습니다.`, "info");
+        })
+        .catch(() => showToast("오목 코인 보상을 저장하지 못했습니다.", "error"));
+    }
   }, [activeGameId, code, identity, playerRole, room, showToast]);
 
   useEffect(() => {
@@ -378,6 +395,19 @@ export default function RoomClient({ code }: { code: string }) {
     }).catch(() => {
       showToast("전적을 저장하지 못했습니다.", "error");
     });
+
+    if (roundResult.winnerId === participantId && (roundResult.outcome === "answered" || roundResult.outcome === "stumped")) {
+      const rewardAmount = getGirinCoinReward(roundResult.outcome);
+      const rewardKey = `girin:${resultId}:${participantId}`;
+      if (!walletRewardAttemptedRef.current.has(rewardKey)) {
+        walletRewardAttemptedRef.current.add(rewardKey);
+        settleCoinReward(identity.userId, "girin", resultId, rewardAmount)
+          .then((settled) => {
+            if (settled) showToast(`기린게임 보상 ${rewardAmount} coin을 받았습니다.`, "info");
+          })
+          .catch(() => showToast("기린게임 코인 보상을 저장하지 못했습니다.", "error"));
+      }
+    }
   }, [code, identity, room?.girinGame, showToast]);
 
   useEffect(() => {
@@ -528,6 +558,16 @@ export default function RoomClient({ code }: { code: string }) {
   }, [opponentOnline, roomStatus, identity, playerRole, opponentRole, code]);
 
   useEffect(() => {
+    if (!room || !identity || kickedOutRef.current) return;
+    const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+    if (!participantId || !room.kickedParticipants?.[participantId]) return;
+
+    kickedOutRef.current = true;
+    showToast("방장에 의해 문서에서 추방되었습니다.", "error");
+    router.replace("/workspace");
+  }, [identity, room, router, showToast]);
+
+  useEffect(() => {
     const transfer = JSON.parse(hostTransferKey) as { hostOffline: boolean };
     if (!transfer.hostOffline) return undefined;
 
@@ -648,6 +688,29 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("대진 참여 신청을 보냈습니다. 두 명이 모이면 게임이 시작됩니다.", "info");
     } catch {
       showToast("대진 참여 신청을 보내지 못했습니다.", "error");
+    }
+  }
+
+  function handleKickParticipant(avatar: ChromeAvatar) {
+    if (!room || identity?.role !== "host" || room.status !== "waiting") {
+      showToast("대기 중인 방에서만 참여자를 추방할 수 있습니다.", "info");
+      return;
+    }
+    const target = getMatchParticipants(room).find((participant) => participant.id === avatar.id);
+    if (!target || target.role === "host") return;
+    setKickTarget(target);
+  }
+
+  async function handleConfirmKick() {
+    if (!kickTarget) return;
+    const target = kickTarget;
+    setKickTarget(null);
+    if (target.role === "host") return;
+    try {
+      await kickParticipant(code, target.role, target.id);
+      showToast(`${target.name}님을 문서에서 추방했습니다.`, "info");
+    } catch {
+      showToast("참여자를 추방하지 못했습니다.", "error");
     }
   }
 
@@ -1024,6 +1087,8 @@ export default function RoomClient({ code }: { code: string }) {
         startActionLabel={activeGameId === "girin" ? "게임 시작" : "대진 참여"}
         onRestart={currentGameStatus === "finished" && identity.role === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
+        canKickParticipants={identity.role === "host" && currentGameStatus === "waiting"}
+        onKickParticipant={handleKickParticipant}
         timerSeconds={timerSeconds}
         onOpenChat={() => setChatOpen(toggleChatOpen)}
         onRequestUndo={activeGameId === "omok" && playerRole ? handleRequestUndo : undefined}
@@ -1150,6 +1215,15 @@ export default function RoomClient({ code }: { code: string }) {
             : "두 명이 대진에 참여하면 자동으로 게임이 시작됩니다."
         }
         confirmLabel={activeGameId === "girin" ? "시작" : "참여하기"}
+      />
+
+      <StartGameConfirmDialog
+        open={Boolean(kickTarget)}
+        onConfirm={handleConfirmKick}
+        onCancel={() => setKickTarget(null)}
+        title="이 참여자를 추방하시겠습니까?"
+        description={kickTarget ? `${kickTarget.name}님은 문서에서 나가고 다시 입장할 수 있습니다.` : undefined}
+        confirmLabel="추방"
       />
 
       {incomingUndoFrom && (

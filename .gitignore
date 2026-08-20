@@ -35,6 +35,9 @@ Thumbs.db
 # claude code local tooling config
 .claude/
 
+# local agent instructions and Markdown notes
+*.md
+
 # debug
 npm-debug.log*
 yarn-debug.log*

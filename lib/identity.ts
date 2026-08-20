@@ -10,6 +10,7 @@ export interface StoredIdentity {
 
 const STORAGE_PREFIX = "kt_room_";
 export const USER_ID_STORAGE_KEY = "kt_user_id";
+export const USER_NAME_STORAGE_KEY = "kt_user_name";
 
 function generateUserId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -25,6 +26,15 @@ export function getOrCreateUserId(): string {
   const userId = generateUserId();
   localStorage.setItem(USER_ID_STORAGE_KEY, userId);
   return userId;
+}
+
+export function loadNickname(): string {
+  if (typeof localStorage === "undefined") return "";
+  return localStorage.getItem(USER_NAME_STORAGE_KEY) ?? "";
+}
+
+export function saveNickname(name: string): void {
+  localStorage.setItem(USER_NAME_STORAGE_KEY, name);
 }
 
 export function saveIdentity(code: string, identity: StoredIdentity) {

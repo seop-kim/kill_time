@@ -525,7 +525,15 @@ export function getParticipantGroupsForGame(gameId: string, participants: Partic
   };
 }
 
-export function ParticipantList({ participants }: { participants: ParticipantGroups }) {
+export function ParticipantList({
+  participants,
+  canKick = false,
+  onKick,
+}: {
+  participants: ParticipantGroups;
+  canKick?: boolean;
+  onKick?: (participant: ChromeAvatar) => void;
+}) {
   function renderGroup(label: string, entries: ChromeAvatar[]) {
     const onlineEntries = entries.filter((entry) => entry.online !== false);
 
@@ -546,6 +554,16 @@ export function ParticipantList({ participants }: { participants: ParticipantGro
               <span className="min-w-0 truncate">{a.name}</span>
               {a.isHost && <span className="ml-auto shrink-0 text-[8px] text-[#217346]">방장</span>}
               {a.isTurn && <span className={`${a.isHost ? "" : "ml-auto"} shrink-0 text-[8px] text-[#217346]`}>현재 차례</span>}
+              {canKick && !a.isHost && onKick && (
+                <button
+                  type="button"
+                  aria-label={`${a.name} 추방`}
+                  onClick={() => onKick(a)}
+                  className="ml-auto shrink-0 rounded-sm border border-[#d9534f] px-1 py-0.5 text-[8px] text-[#c0392b] hover:bg-[#fdecea]"
+                >
+                  추방
+                </button>
+              )}
             </div>
           ))
         ) : (
@@ -832,6 +850,8 @@ export function ExcelChrome({
   startActionLabel = "게임 시작",
   onRestart,
   onLeave,
+  canKickParticipants = false,
+  onKickParticipant,
   timerSeconds,
   onOpenChat,
   onRequestUndo,
@@ -867,6 +887,8 @@ export function ExcelChrome({
   startActionLabel?: string;
   onRestart?: () => void;
   onLeave?: () => void;
+  canKickParticipants?: boolean;
+  onKickParticipant?: (participant: ChromeAvatar) => void;
   timerSeconds?: number | null;
   onOpenChat?: () => void;
   onRequestUndo?: () => void;
@@ -1067,7 +1089,11 @@ export function ExcelChrome({
                 <div className="absolute right-0 top-[22px] z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 px-2 w-[150px] text-[10px] text-[#333]">
                   <div className="text-[9px] text-[#999] px-1 pb-1">현재 참여자</div>
                   {displayParticipants ? (
-                    <ParticipantList participants={displayParticipants} />
+                    <ParticipantList
+                      participants={displayParticipants}
+                      canKick={canKickParticipants}
+                      onKick={onKickParticipant}
+                    />
                   ) : (
                     displayAvatars.map((a) => (
                       <div key={a.id ?? a.name} className="flex items-center gap-1.5 px-1 py-0.5">

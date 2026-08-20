@@ -12,6 +12,7 @@ import {
   finishSoloGirinInRoom,
   buildChatLogUpdates,
   removeParticipantFromRoom,
+  kickParticipantFromRoom,
   transferOfflineHost,
   type Room,
 } from "./rooms";
@@ -189,6 +190,48 @@ describe("disconnect grace period", () => {
   it("keeps game forfeit at 15 seconds and removes offline participants after 20 seconds", () => {
     expect(DISCONNECT_GRACE_MS).toBe(15000);
     expect(PARTICIPANT_REMOVAL_GRACE_MS).toBe(20000);
+  });
+});
+
+describe("host participant removal", () => {
+  it("lets the host kick a waiting guest and removes that guest from match candidates", () => {
+    const room: Room = {
+      host: { id: "host-1", name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      spectators: { "spectator-1": { id: "spectator-1", name: "Observer" } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    const kicked = kickParticipantFromRoom(
+      room,
+      "host",
+      { id: "guest-1", name: "Guest", role: "guest" },
+      1234,
+    );
+
+    expect(kicked.guest).toBeNull();
+    expect(getMatchParticipants(kicked).map((participant) => participant.id)).toEqual(["host-1", "spectator-1"]);
+    expect(kicked.kickedParticipants).toEqual({ "guest-1": { name: "Guest", kickedAt: 1234 } });
+  });
+
+  it("does not kick during a game or when requested by a non-host", () => {
+    const room: Room = {
+      host: { id: "host-1", name: "Host" },
+      guest: { id: "guest-1", name: "Guest" },
+      blackPlayer: "host",
+      turn: "black",
+      status: "playing",
+      winner: null,
+      lastMove: null,
+    };
+    const target = { id: "guest-1", name: "Guest", role: "guest" as const };
+
+    expect(kickParticipantFromRoom(room, "host", target)).toBe(room);
+    expect(kickParticipantFromRoom({ ...room, status: "waiting" }, "guest", target)).toEqual({ ...room, status: "waiting" });
   });
 });
 
