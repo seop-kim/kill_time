@@ -50,10 +50,11 @@ export default function Home() {
     try {
       const result = await joinRoom(code, name.trim());
       if (!result.ok) {
-        showToast(
-          result.reason === "not-found" ? "문서를 찾을 수 없습니다." : "이미 인원이 가득한 문서입니다.",
-          "error",
-        );
+        if (result.reason === "not-found") {
+          router.push(`/room/${code}`);
+          return;
+        }
+        showToast("이미 인원이 가득한 문서입니다.", "error");
         return;
       }
       saveIdentity(code, {
