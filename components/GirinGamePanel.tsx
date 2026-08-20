@@ -2,13 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  createGirinPixel,
-  createGirinBrushPixels,
-  createGirinLinePixels,
+  createGirinStrokePixels,
   GIRIN_PIXEL_COLUMNS,
   GIRIN_PIXEL_ROWS,
   GIRIN_PIXEL_SIZE,
-  GIRIN_TURN_SECONDS,
+  getGirinRemainingSeconds,
   girinPixelKey,
   type GirinGame,
   type GirinPixel,
@@ -22,7 +20,7 @@ export function GirinGamePanel({
   game,
   participantId,
   onSubmitPrompt,
-  onDrawPixel,
+  onDrawPixels,
   onTimeUp,
   drawingColor = "#222",
   drawingWidth = 1,
@@ -33,7 +31,7 @@ export function GirinGamePanel({
   game: GirinGame;
   participantId: string;
   onSubmitPrompt: (prompt: string) => void;
-  onDrawPixel: (pixel: GirinPixel) => void;
+  onDrawPixels: (pixels: GirinPixel[]) => void;
   onTimeUp: () => void;
   drawingColor?: string;
   drawingWidth?: number;
@@ -46,6 +44,7 @@ export function GirinGamePanel({
   const paintedPixelKeysRef = useRef<Set<string>>(new Set());
   const [promptDraft, setPromptDraft] = useState("");
   const [localPixels, setLocalPixels] = useState<Record<string, GirinPixel>>({});
+  const localPixelsRef = useRef<Record<string, GirinPixel>>({});
   const isDrawer = game.currentParticipantId === participantId;
   const canDraw = isDrawer && game.status === "drawing";
   const pixelsCleared = game.pixels == null;
@@ -58,7 +57,7 @@ export function GirinGamePanel({
     let timer: ReturnType<typeof setInterval> | undefined;
     let expired = false;
     function tick() {
-      const next = Math.max(0, GIRIN_TURN_SECONDS - Math.floor((Date.now() - game.turnStartedAt!) / 1000));
+      const next = getGirinRemainingSeconds(game.turnStartedAt!);
       if (next === 0 && !expired) {
         expired = true;
         onTimeUp();
@@ -76,42 +75,53 @@ export function GirinGamePanel({
     // arrives separately, so clear the optimistic pixels immediately.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalPixels({});
+    localPixelsRef.current = {};
     lastPaintedPixelRef.current = null;
     paintedPixelKeysRef.current.clear();
   }, [clearVersion, game.currentRound, game.status, game.prompt, pixelsCleared]);
 
-  function pixelFromEvent(event: React.PointerEvent<HTMLDivElement>): GirinPixel | null {
-    const rect = event.currentTarget.getBoundingClientRect();
+  function pixelFromPoint(target: HTMLDivElement, clientX: number, clientY: number): GirinPixel | null {
+    const rect = target.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
-    const col = Math.floor(((event.clientX - rect.left) / rect.width) * GIRIN_PIXEL_COLUMNS);
-    const row = Math.floor(((event.clientY - rect.top) / rect.height) * GIRIN_PIXEL_ROWS);
+    const col = Math.floor(((clientX - rect.left) / rect.width) * GIRIN_PIXEL_COLUMNS);
+    const row = Math.floor(((clientY - rect.top) / rect.height) * GIRIN_PIXEL_ROWS);
     if (row < 0 || row >= GIRIN_PIXEL_ROWS || col < 0 || col >= GIRIN_PIXEL_COLUMNS) return null;
-    return createGirinPixel(row, col, drawingColor);
+    return { row, col, color: drawingColor };
   }
 
-  function paintPixel(pixel: GirinPixel) {
+  function paintPoints(target: HTMLDivElement, points: Array<{ clientX: number; clientY: number }>) {
     if (!canDraw) return;
     const brushSize = drawingEraser ? eraserWidth : drawingWidth;
-    const linePixels = lastPaintedPixelRef.current
-      ? createGirinLinePixels(
-          lastPaintedPixelRef.current.row,
-          lastPaintedPixelRef.current.col,
-          pixel.row,
-          pixel.col,
-        )
-      : [{ row: pixel.row, col: pixel.col }];
+    const nextLocalPixels = { ...localPixelsRef.current };
+    const drawnPixels: GirinPixel[] = [];
 
-    for (const linePixel of linePixels) {
-      const brushPixels = createGirinBrushPixels(linePixel.row, linePixel.col, brushSize, drawingEraser ? null : drawingColor);
-      for (const nextPixel of brushPixels) {
+    for (const point of points) {
+      const pixel = pixelFromPoint(target, point.clientX, point.clientY);
+      if (!pixel) continue;
+
+      const start = lastPaintedPixelRef.current ?? pixel;
+      const strokePixels = createGirinStrokePixels(
+        start.row,
+        start.col,
+        pixel.row,
+        pixel.col,
+        brushSize,
+        drawingEraser ? null : drawingColor,
+      );
+      for (const nextPixel of strokePixels) {
         const key = girinPixelKey(nextPixel.row, nextPixel.col);
         if (paintedPixelKeysRef.current.has(key)) continue;
         paintedPixelKeysRef.current.add(key);
-        setLocalPixels((current) => ({ ...current, [key]: nextPixel }));
-        onDrawPixel(nextPixel);
+        nextLocalPixels[key] = nextPixel;
+        drawnPixels.push(nextPixel);
       }
+      lastPaintedPixelRef.current = { row: pixel.row, col: pixel.col };
     }
-    lastPaintedPixelRef.current = { row: pixel.row, col: pixel.col };
+
+    if (drawnPixels.length === 0) return;
+    localPixelsRef.current = nextLocalPixels;
+    setLocalPixels(nextLocalPixels);
+    onDrawPixels(drawnPixels);
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -120,17 +130,19 @@ export function GirinGamePanel({
     paintingRef.current = true;
     lastPaintedPixelRef.current = null;
     paintedPixelKeysRef.current.clear();
-    const pixel = pixelFromEvent(event);
-    if (pixel) paintPixel(pixel);
+    paintPoints(event.currentTarget, [event.nativeEvent]);
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
     if (!paintingRef.current) return;
-    const pixel = pixelFromEvent(event);
-    if (pixel) paintPixel(pixel);
+    const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    paintPoints(event.currentTarget, coalescedEvents.length > 0 ? coalescedEvents : [event.nativeEvent]);
   }
 
   function stopPainting(event: React.PointerEvent<HTMLDivElement>) {
+    if (paintingRef.current && event.type !== "pointercancel") {
+      paintPoints(event.currentTarget, [event.nativeEvent]);
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     paintingRef.current = false;
     lastPaintedPixelRef.current = null;

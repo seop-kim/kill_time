@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   AddinsMenuItems,
   CopilotButton,
+  EXCEL_DESIGN_WIDTH,
+  EXCEL_FHD_ZOOM,
   EraserPalette,
   ExcelChrome,
+  FHD_VIEWPORT_WIDTH,
   MatchParticipationPanel,
   ParticipantList,
   ProfileStatsDropdown,
@@ -43,11 +46,15 @@ describe("ExcelChrome", () => {
     const markup = renderChrome();
     const rootClass = markup.match(/^<div class="([^\"]+)/)?.[1] ?? "";
 
-    expect(rootClass).toContain("min-w-[1280px]");
+    expect(rootClass).toContain("min-w-[1440px]");
     expect(rootClass).toMatch(/\bbottom-0\b/);
     expect(rootClass).not.toMatch(/\bh-\[720px\]\b/);
     expect(rootClass).not.toMatch(/\bmin-h-\[720px\]\b/);
-    expect(rootClass).toMatch(/(^| )w-\[1280px\]( |$)/);
+    expect(rootClass).toMatch(/(^| )w-\[1440px\]( |$)/);
+  });
+
+  it("maps the fixed design canvas exactly to the FHD viewport", () => {
+    expect(EXCEL_DESIGN_WIDTH * EXCEL_FHD_ZOOM).toBe(FHD_VIEWPORT_WIDTH);
   });
 
   it("keeps the ribbon at a fixed FHD width without responsive scrolling", () => {

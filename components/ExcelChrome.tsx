@@ -652,7 +652,11 @@ export function ProfileStatsDropdown({
   );
 }
 
-const zoomStyle = { zoom: 1.5 } as React.CSSProperties;
+export const FHD_VIEWPORT_WIDTH = 1920;
+export const EXCEL_DESIGN_WIDTH = 1440;
+export const EXCEL_FHD_ZOOM = FHD_VIEWPORT_WIDTH / EXCEL_DESIGN_WIDTH;
+
+const zoomStyle = { zoom: EXCEL_FHD_ZOOM } as React.CSSProperties;
 
 export function SettingsDropdown({
   onStartGame,
@@ -918,7 +922,7 @@ export function ExcelChrome({
 
   return (
     <div
-      className="fixed left-0 top-0 bottom-0 w-[1280px] min-w-[1280px] flex flex-col overflow-hidden text-[#333]"
+      className="fixed left-0 top-0 bottom-0 w-[1440px] min-w-[1440px] flex flex-col overflow-hidden text-[#333]"
       style={zoomStyle}
     >
       <div className="shrink-0">

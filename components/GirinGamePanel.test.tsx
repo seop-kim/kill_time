@@ -23,7 +23,7 @@ describe("GirinGamePanel", () => {
         game={{ ...baseGame, status: "drawing", turnStartedAt: Date.now() }}
         participantId="u1"
         onSubmitPrompt={() => {}}
-        onDrawPixel={() => {}}
+        onDrawPixels={() => {}}
         onTimeUp={() => {}}
       />,
     );
@@ -62,7 +62,7 @@ describe("GirinGamePanel", () => {
         game={baseGame}
         participantId="u1"
         onSubmitPrompt={() => {}}
-        onDrawPixel={() => {}}
+        onDrawPixels={() => {}}
         onTimeUp={() => {}}
       />,
     );
@@ -78,7 +78,7 @@ describe("GirinGamePanel", () => {
         game={{ ...baseGame, status: "drawing", prompt: "기린", turnStartedAt: Date.now() }}
         participantId="u1"
         onSubmitPrompt={() => {}}
-        onDrawPixel={() => {}}
+        onDrawPixels={() => {}}
         onTimeUp={() => {}}
       />,
     );

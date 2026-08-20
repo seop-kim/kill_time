@@ -6,8 +6,10 @@ import {
   createGirinPixel,
   createGirinGame,
   createGirinLinePixels,
+  createGirinStrokePixels,
   finishGirinGameIfSolo,
   getGirinTurnToastMessage,
+  getGirinRemainingSeconds,
   girinPixelKey,
   submitGirinAnswer,
   submitGirinPrompt,
@@ -44,6 +46,17 @@ describe("내가 그린 기린 그림 game state", () => {
     ]);
   });
 
+  it("creates a continuous one-cell brush stroke from fast pointer positions", () => {
+    expect(createGirinStrokePixels(12, 34, 12, 39, 1, "#e51c23")).toEqual([
+      { row: 12, col: 34, color: "#e51c23" },
+      { row: 12, col: 35, color: "#e51c23" },
+      { row: 12, col: 36, color: "#e51c23" },
+      { row: 12, col: 37, color: "#e51c23" },
+      { row: 12, col: 38, color: "#e51c23" },
+      { row: 12, col: 39, color: "#e51c23" },
+    ]);
+  });
+
   it("randomly assigns every participant a unique order at game start", () => {
     const game = createGirinGame(participants, 1000, () => 0.42);
     const ordered = Object.values(game.participants).map((participant) => participant.order).sort();
@@ -64,6 +77,12 @@ describe("내가 그린 기린 그림 game state", () => {
     expect(prompt.pixels).toEqual({});
     expect(GIRIN_PROMPT_MAX_LENGTH).toBe(8);
     expect(GIRIN_TURN_SECONDS).toBe(300);
+  });
+
+  it("calculates the Girin turn time remaining from the shared turn start", () => {
+    expect(getGirinRemainingSeconds(1000, 1000)).toBe(300);
+    expect(getGirinRemainingSeconds(1000, 61_000)).toBe(240);
+    expect(getGirinRemainingSeconds(1000, 301_000)).toBe(0);
   });
 
   it("awards the quiz to an exact answerer and moves to the next questioner", () => {

@@ -85,6 +85,34 @@ export function createGirinBrushPixels(
   return pixels;
 }
 
+export function createGirinStrokePixels(
+  startRow: number,
+  startCol: number,
+  endRow: number,
+  endCol: number,
+  brushSize: number,
+  color: string | null,
+): GirinPixel[] {
+  const pixels: GirinPixel[] = [];
+  const seen = new Set<string>();
+
+  for (const linePixel of createGirinLinePixels(startRow, startCol, endRow, endCol)) {
+    for (const pixel of createGirinBrushPixels(linePixel.row, linePixel.col, brushSize, color)) {
+      const key = girinPixelKey(pixel.row, pixel.col);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pixels.push(pixel);
+    }
+  }
+
+  return pixels;
+}
+
+export function getGirinRemainingSeconds(turnStartedAt: number, now = Date.now()): number {
+  const elapsed = Math.max(0, Math.floor((now - turnStartedAt) / 1000));
+  return Math.max(0, GIRIN_TURN_SECONDS - elapsed);
+}
+
 export type GirinRoundOutcome = "answered" | "stumped";
 
 export interface GirinRoundResult {
@@ -302,6 +330,15 @@ export async function advanceGirinRoundInRoom(code: string): Promise<void> {
 export async function addGirinPixel(code: string, pixel: GirinPixel): Promise<void> {
   const pixelRef = ref(getDb(), `rooms/${code}/girinGame/pixels/${girinPixelKey(pixel.row, pixel.col)}`);
   await set(pixelRef, pixel.color === null ? null : pixel);
+}
+
+export async function addGirinPixels(code: string, pixels: GirinPixel[]): Promise<void> {
+  if (pixels.length === 0) return;
+  const updates: Record<string, GirinPixel | null> = {};
+  for (const pixel of pixels) {
+    updates[girinPixelKey(pixel.row, pixel.col)] = pixel.color === null ? null : pixel;
+  }
+  await update(ref(getDb(), `rooms/${code}/girinGame/pixels`), updates);
 }
 
 export async function clearGirinPixels(code: string): Promise<void> {

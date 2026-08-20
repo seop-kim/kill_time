@@ -46,16 +46,16 @@ import {
   type Room,
 } from "@/lib/rooms";
 import {
-  addGirinPixel,
+  addGirinPixels,
   advanceGirinRoundInRoom,
   clearGirinPixels,
   getGirinTurnToastMessage,
+  getGirinRemainingSeconds,
   resetGirinGame,
   startGirinGame,
   submitGirinAnswerToRoom,
   submitGirinPromptToRoom,
   type GirinGame,
-  type GirinPixel,
 } from "@/lib/girin";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
@@ -438,10 +438,33 @@ export default function RoomClient({ code }: { code: string }) {
   const turnStartedAt = room?.turnStartedAt;
   const currentTurn = room?.turn;
   const roomStatus = room?.status;
+  const currentGirinStatus = room?.girinGame?.status;
+  const girinTurnStartedAt = room?.girinGame?.turnStartedAt;
 
   useEffect(() => {
+    if (activeGameId === "girin") {
+      if (currentGirinStatus !== "drawing" || !girinTurnStartedAt) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setTimerSeconds(null);
+        return undefined;
+      }
+
+      let interval: ReturnType<typeof setInterval> | null = null;
+      function tickGirin() {
+        const remaining = getGirinRemainingSeconds(girinTurnStartedAt!);
+        setTimerSeconds(remaining);
+        if (remaining <= 0 && interval) {
+          clearInterval(interval);
+        }
+      }
+      tickGirin();
+      interval = setInterval(tickGirin, 1000);
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    }
+
     if (roomStatus !== "playing" || !turnStartedAt || !currentTurn) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTimerSeconds(null);
       return undefined;
     }
@@ -460,7 +483,7 @@ export default function RoomClient({ code }: { code: string }) {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [turnStartedAt, currentTurn, roomStatus, code]);
+  }, [activeGameId, currentGirinStatus, girinTurnStartedAt, turnStartedAt, currentTurn, roomStatus, code]);
 
   // Opponent disconnect → grace period → forfeit in their favor.
   const opponentRole = playerRole ? opposite(playerRole) : null;
@@ -1001,7 +1024,7 @@ export default function RoomClient({ code }: { code: string }) {
         startActionLabel={activeGameId === "girin" ? "게임 시작" : "대진 참여"}
         onRestart={currentGameStatus === "finished" && identity.role === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
-        timerSeconds={activeGameId === "omok" ? timerSeconds : null}
+        timerSeconds={timerSeconds}
         onOpenChat={() => setChatOpen(toggleChatOpen)}
         onRequestUndo={activeGameId === "omok" && playerRole ? handleRequestUndo : undefined}
         onRequestDraw={activeGameId === "omok" && playerRole ? handleRequestDraw : undefined}
@@ -1060,8 +1083,8 @@ export default function RoomClient({ code }: { code: string }) {
                   showToast("문제를 제출하지 못했습니다.", "error"),
                 );
               }}
-              onDrawPixel={(pixel: GirinPixel) => {
-                addGirinPixel(code, pixel).catch(() => showToast("픽셀을 저장하지 못했습니다.", "error"));
+              onDrawPixels={(pixels) => {
+                addGirinPixels(code, pixels).catch(() => showToast("픽셀을 저장하지 못했습니다.", "error"));
               }}
               onTimeUp={() => {
                 advanceGirinRoundInRoom(code).catch(() => showToast("다음 문제로 넘어가지 못했습니다.", "error"));
