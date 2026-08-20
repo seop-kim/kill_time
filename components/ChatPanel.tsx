@@ -69,17 +69,35 @@ const CHAT_USER_COLORS: ChatUserColor[] = [
   { accent: "#1b8a3d", surface: "#eaf7ee" },
   { accent: "#b05a00", surface: "#fff4e5" },
   { accent: "#c23b8b", surface: "#fceaf5" },
+  { accent: "#007c91", surface: "#e5f6f8" },
+  { accent: "#8a5a00", surface: "#fff6df" },
+  { accent: "#5b4bc4", surface: "#eeecff" },
+  { accent: "#b42318", surface: "#ffebe9" },
+  { accent: "#37623f", surface: "#eaf4ec" },
+  { accent: "#9c2c77", surface: "#fcebf6" },
+  { accent: "#006d77", surface: "#e3f5f6" },
+  { accent: "#7a4e00", surface: "#fff3d6" },
+  { accent: "#42526e", surface: "#edf1f7" },
 ];
 
-export function getChatUserColor(
-  message: Pick<ChatMessage, "by" | "name" | "participantId">,
-): ChatUserColor {
-  const key = message.participantId ?? `${message.by}:${message.name}`;
-  let hash = 0;
-  for (const character of key) {
-    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+export function getChatUserKey(message: Pick<ChatMessage, "by" | "name" | "participantId">): string {
+  return message.participantId ?? `${message.by}:${message.name}`;
+}
+
+export function getChatUserColor(participantIndex: number): ChatUserColor {
+  const paletteIndex = ((participantIndex % CHAT_USER_COLORS.length) + CHAT_USER_COLORS.length) % CHAT_USER_COLORS.length;
+  return CHAT_USER_COLORS[paletteIndex];
+}
+
+export function getChatUserColorMap(messages: ChatMessage[]): Map<string, ChatUserColor> {
+  const colors = new Map<string, ChatUserColor>();
+  for (const message of messages) {
+    const key = getChatUserKey(message);
+    if (!colors.has(key)) {
+      colors.set(key, getChatUserColor(colors.size));
+    }
   }
-  return CHAT_USER_COLORS[hash % CHAT_USER_COLORS.length];
+  return colors;
 }
 
 export function normalizeChatTextSize(value: number) {
@@ -173,6 +191,7 @@ export function ChatPanel({
   const [isResizing, setIsResizing] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const resizeStartRef = useRef<{ pointerX: number; width: number } | null>(null);
+  const userColors = getChatUserColorMap(messages);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -303,7 +322,7 @@ export function ChatPanel({
           </div>
         )}
         {messages.map((m, i) => {
-          const userColor = getChatUserColor(m);
+          const userColor = userColors.get(getChatUserKey(m)) ?? getChatUserColor(0);
           return m.by === myRole ? (
             <div key={i} className="flex flex-col items-end">
               <span

@@ -16,6 +16,15 @@ const BOARD_WIDTH = GIRIN_PIXEL_COLUMNS * GIRIN_PIXEL_SIZE;
 const BOARD_HEIGHT = GIRIN_PIXEL_ROWS * GIRIN_PIXEL_SIZE;
 const PIXEL_GRID_COLOR = "#d9d9d9";
 
+export function mergeGirinPixelBatch(
+  pending: Map<string, GirinPixel>,
+  pixels: GirinPixel[],
+): void {
+  for (const pixel of pixels) {
+    pending.set(girinPixelKey(pixel.row, pixel.col), pixel);
+  }
+}
+
 export function GirinGamePanel({
   game,
   participantId,
@@ -42,12 +51,36 @@ export function GirinGamePanel({
   const paintingRef = useRef(false);
   const lastPaintedPixelRef = useRef<{ row: number; col: number } | null>(null);
   const paintedPixelKeysRef = useRef<Set<string>>(new Set());
+  const pendingPixelBatchRef = useRef<Map<string, GirinPixel>>(new Map());
+  const paintFrameRef = useRef<number | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
   const [localPixels, setLocalPixels] = useState<Record<string, GirinPixel>>({});
   const localPixelsRef = useRef<Record<string, GirinPixel>>({});
   const isDrawer = game.currentParticipantId === participantId;
   const canDraw = isDrawer && game.status === "drawing";
   const pixelsCleared = game.pixels == null;
+
+  function flushPaintFrame() {
+    paintFrameRef.current = null;
+    const pendingPixels = [...pendingPixelBatchRef.current.values()];
+    pendingPixelBatchRef.current.clear();
+    if (pendingPixels.length === 0) return;
+    setLocalPixels({ ...localPixelsRef.current });
+    onDrawPixels(pendingPixels);
+  }
+
+  function flushPendingPaintFrame() {
+    if (paintFrameRef.current !== null) {
+      cancelAnimationFrame(paintFrameRef.current);
+      paintFrameRef.current = null;
+    }
+    flushPaintFrame();
+  }
+
+  function schedulePaintFrame() {
+    if (paintFrameRef.current !== null) return;
+    paintFrameRef.current = requestAnimationFrame(flushPaintFrame);
+  }
 
   useEffect(() => {
     if (game.status !== "drawing" || !game.turnStartedAt) {
@@ -73,11 +106,20 @@ export function GirinGamePanel({
   useEffect(() => {
     // A new prompt or round starts with an empty board. The Firebase update
     // arrives separately, so clear the optimistic pixels immediately.
+    flushPendingPaintFrame();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalPixels({});
     localPixelsRef.current = {};
     lastPaintedPixelRef.current = null;
     paintedPixelKeysRef.current.clear();
+
+    return () => {
+      if (paintFrameRef.current !== null) {
+        cancelAnimationFrame(paintFrameRef.current);
+        paintFrameRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearVersion, game.currentRound, game.status, game.prompt, pixelsCleared]);
 
   function pixelFromPoint(target: HTMLDivElement, clientX: number, clientY: number): GirinPixel | null {
@@ -92,7 +134,7 @@ export function GirinGamePanel({
   function paintPoints(target: HTMLDivElement, points: Array<{ clientX: number; clientY: number }>) {
     if (!canDraw) return;
     const brushSize = drawingEraser ? eraserWidth : drawingWidth;
-    const nextLocalPixels = { ...localPixelsRef.current };
+    const nextLocalPixels = localPixelsRef.current;
     const drawnPixels: GirinPixel[] = [];
 
     for (const point of points) {
@@ -120,8 +162,8 @@ export function GirinGamePanel({
 
     if (drawnPixels.length === 0) return;
     localPixelsRef.current = nextLocalPixels;
-    setLocalPixels(nextLocalPixels);
-    onDrawPixels(drawnPixels);
+    mergeGirinPixelBatch(pendingPixelBatchRef.current, drawnPixels);
+    schedulePaintFrame();
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -143,6 +185,7 @@ export function GirinGamePanel({
     if (paintingRef.current && event.type !== "pointercancel") {
       paintPoints(event.currentTarget, [event.nativeEvent]);
     }
+    flushPendingPaintFrame();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     paintingRef.current = false;
     lastPaintedPixelRef.current = null;

@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   ChatPanel,
   TextSizeMenu,
+  getChatUserColorMap,
+  getChatUserKey,
   getChatUserColor,
   normalizeChatTextSize,
   normalizeChatWidth,
@@ -91,25 +93,42 @@ describe("ChatPanel", () => {
     expect(markup).toContain("cursor-ew-resize");
   });
 
-  it("uses stable distinct colors for different chat users", () => {
-    const first = getChatUserColor({ by: "host", participantId: "user-1", name: "같은 이름" });
-    const firstAgain = getChatUserColor({ by: "host", participantId: "user-1", name: "같은 이름" });
-    const second = getChatUserColor({ by: "guest", participantId: "user-2", name: "같은 이름" });
+  it("assigns 15 distinct colors in participant order and rotates on the 16th", () => {
+    const messages = Array.from({ length: 16 }, (_, index) => ({
+      by: "spectator" as const,
+      participantId: `user-${index + 1}`,
+      name: `참가자 ${index + 1}`,
+      text: "메시지",
+      at: index,
+    }));
+    const colors = getChatUserColorMap(messages);
+    const firstFifteen = messages.slice(0, 15).map((message) => colors.get(getChatUserKey(message)));
 
-    expect(first).toEqual(firstAgain);
-    expect(first).not.toEqual(second);
+    expect(new Set(firstFifteen.map((color) => color?.accent)).size).toBe(15);
+    expect(colors.get(getChatUserKey(messages[15]))).toEqual(colors.get(getChatUserKey(messages[0])));
+  });
+
+  it("keeps the same color when a participant sends another message", () => {
+    const firstMessage = { by: "host" as const, participantId: "user-1", name: "같은 이름", text: "첫 메시지", at: 1 };
+    const secondMessage = { by: "guest" as const, participantId: "user-2", name: "다른 이름", text: "두 번째 메시지", at: 2 };
+    const repeatedMessage = { ...firstMessage, text: "다시 보냅니다", at: 3 };
+    const colors = getChatUserColorMap([firstMessage, secondMessage, repeatedMessage]);
+
+    expect(colors.get(getChatUserKey(firstMessage))).toEqual(colors.get(getChatUserKey(repeatedMessage)));
   });
 
   it("applies user colors to chat messages", () => {
-    const hostColor = getChatUserColor({ by: "host", participantId: "host-id", name: "Host" });
-    const guestColor = getChatUserColor({ by: "guest", participantId: "guest-id", name: "Guest" });
+    const messages = [
+      { by: "host" as const, participantId: "host-id", name: "Host", text: "안녕", at: 1 },
+      { by: "guest" as const, participantId: "guest-id", name: "Guest", text: "반가워", at: 2 },
+    ];
+    const colors = getChatUserColorMap(messages);
+    const hostColor = colors.get(getChatUserKey(messages[0])) ?? getChatUserColor(0);
+    const guestColor = colors.get(getChatUserKey(messages[1])) ?? getChatUserColor(1);
     const markup = renderToStaticMarkup(
       <ChatPanel
         open
-        messages={[
-          { by: "host", participantId: "host-id", name: "Host", text: "안녕", at: 1 },
-          { by: "guest", participantId: "guest-id", name: "Guest", text: "반가워", at: 2 },
-        ]}
+        messages={messages}
         myRole="host"
         onClose={() => {}}
         onSend={() => {}}

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createGirinBrushPixels, createGirinPixel } from "../lib/girin";
-import { GirinGamePanel } from "./GirinGamePanel";
+import { GirinGamePanel, mergeGirinPixelBatch } from "./GirinGamePanel";
 import type { GirinGame } from "../lib/girin";
 
 const baseGame: GirinGame = {
@@ -54,6 +54,21 @@ describe("GirinGamePanel", () => {
       { row: 12, col: 34, color: "#e51c23" },
     ]);
     expect(createGirinPixel(12, 34, null)).toEqual({ row: 12, col: 34, color: null });
+  });
+
+  it("keeps every latest pixel when fast pointer updates are batched", () => {
+    const pending = new Map<string, ReturnType<typeof createGirinPixel>>();
+
+    mergeGirinPixelBatch(pending, [
+      createGirinPixel(2, 3, "#e51c23"),
+      createGirinPixel(2, 4, "#e51c23"),
+      createGirinPixel(2, 3, null),
+    ]);
+
+    expect([...pending.values()]).toEqual([
+      { row: 2, col: 3, color: null },
+      { row: 2, col: 4, color: "#e51c23" },
+    ]);
   });
 
   it("shows the prompt form only to the current questioner", () => {
