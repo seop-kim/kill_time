@@ -4,7 +4,9 @@ import {
   createSeotdaDeck,
   createSeotdaGame,
   evaluateSeotdaHand,
+  expireSeotdaTurn,
   getLegalSeotdaActions,
+  getSeotdaRemainingSeconds,
   getSeotdaPayouts,
   getSeotdaWinners,
   type SeotdaCard,
@@ -59,6 +61,20 @@ describe("Seotda game transitions", () => {
     expect(getLegalSeotdaActions(next, "p2")).toContain("bet");
   });
 
+  it("limits a betting turn to 30 seconds before automatically folding", () => {
+    const game = createSeotdaGame(100, players, 1_000, () => 0.1);
+
+    expect(getSeotdaRemainingSeconds(game.turnStartedAt, 30_999)).toBe(1);
+    expect(expireSeotdaTurn(game, 30_999)).toBe(game);
+
+    const timedOut = expireSeotdaTurn(game, 31_000);
+
+    expect(getSeotdaRemainingSeconds(game.turnStartedAt, 31_000)).toBe(0);
+    expect(timedOut.players.p1.folded).toBe(true);
+    expect(timedOut.status).toBe("showdown");
+    expect(timedOut.lastAction).toEqual({ playerId: "p1", action: "fold", amount: 0, round: 1, at: 31_000 });
+  });
+
   it("keeps the first player's actions available when the turn comes back", () => {
     const game = createSeotdaGame(100, players, 100, () => 0.1);
     const afterFirstCheck = applySeotdaAction(game, "p1", "check", 101);
@@ -107,7 +123,50 @@ describe("Seotda game transitions", () => {
     expect(afterRound.currentPlayerId).toBe("p1");
   });
 
-  it("skips an all-in player when selecting the next round turn", () => {
+  it("continues betting after a matched call while both players have money left", () => {
+    const game = createSeotdaGame(100, players, 100, () => 0.1);
+    const afterFirstRound = applySeotdaAction(
+      applySeotdaAction(game, "p1", "check", 101),
+      "p2",
+      "check",
+      102,
+    );
+    const afterBet = applySeotdaAction(afterFirstRound, "p1", "bet", 103);
+    const afterCall = applySeotdaAction(afterBet, "p2", "call", 104);
+
+    expect(afterCall.status).toBe("betting");
+    expect(afterCall.round).toBe(3);
+    expect(afterCall.currentPlayerId).toBe("p1");
+    expect(getLegalSeotdaActions(afterCall, "p1")).toContain("bet");
+  });
+
+  it("opens another betting cycle when both players check after a matched call", () => {
+    const game = createSeotdaGame(100, players, 100, () => 0.1);
+    const afterFirstRound = applySeotdaAction(
+      applySeotdaAction(game, "p1", "check", 101),
+      "p2",
+      "check",
+      102,
+    );
+    const afterCall = applySeotdaAction(
+      applySeotdaAction(afterFirstRound, "p1", "bet", 103),
+      "p2",
+      "call",
+      104,
+    );
+    const afterChecks = applySeotdaAction(
+      applySeotdaAction(afterCall, "p1", "check", 105),
+      "p2",
+      "check",
+      106,
+    );
+
+    expect(afterChecks.status).toBe("betting");
+    expect(afterChecks.round).toBe(4);
+    expect(afterChecks.currentPlayerId).toBe("p1");
+  });
+
+  it("reveals the second cards before ending a matched all-in", () => {
     const baseGame = createSeotdaGame(100, players, 100, () => 0.1);
     const game = {
       ...baseGame,
@@ -120,8 +179,10 @@ describe("Seotda game transitions", () => {
     const afterCall = applySeotdaAction(afterAllIn, "p2", "call", 102);
 
     expect(afterCall.round).toBe(2);
-    expect(afterCall.currentPlayerId).toBe("p2");
-    expect(getLegalSeotdaActions(afterCall, "p2")).toContain("check");
+    expect(afterCall.status).toBe("showdown");
+    expect(afterCall.currentPlayerId).toBeNull();
+    expect(afterCall.players.p1.hand).toHaveLength(2);
+    expect(afterCall.players.p2.hand).toHaveLength(2);
   });
 
   it("moves a fold to showdown and gives the winner the loser's locked stake", () => {
@@ -136,7 +197,7 @@ describe("Seotda game transitions", () => {
     expect(payouts.p2).toBe(200);
   });
 
-  it("returns the full locked stake to the winner even when nobody bets", () => {
+  it("keeps checking players in the game until someone folds", () => {
     const game = createSeotdaGame(100, players, 100, () => 0.1);
     const afterFirstRound = applySeotdaAction(
       applySeotdaAction(game, "p1", "check", 101),
@@ -144,15 +205,18 @@ describe("Seotda game transitions", () => {
       "check",
       102,
     );
-    const finished = applySeotdaAction(
+    const afterSecondRound = applySeotdaAction(
       applySeotdaAction(afterFirstRound, "p1", "check", 103),
       "p2",
       "check",
       104,
     );
+    const finished = applySeotdaAction(afterSecondRound, "p1", "fold", 105);
 
+    expect(afterSecondRound.status).toBe("betting");
+    expect(afterSecondRound.round).toBe(3);
     expect(finished.status).toBe("showdown");
-    expect(getSeotdaPayouts(finished)).toEqual({ p1: 200, p2: 0 });
+    expect(getSeotdaPayouts(finished)).toEqual({ p1: 0, p2: 200 });
   });
 
   it("conserves the locked stake when the hand is tied", () => {

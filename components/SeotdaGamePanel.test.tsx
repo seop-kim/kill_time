@@ -37,15 +37,15 @@ describe("SeotdaGamePanel", () => {
     expect(markup).toMatch(/data-seotda-field="stake-value"[^>]*col-span-3/);
     expect(markup).toMatch(/data-seotda-field="pot-label"[^>]*col-span-2/);
     expect(markup).toMatch(/data-seotda-field="pot-value"[^>]*col-span-3/);
-    expect(markup).toContain('data-seotda-field="own-stack"');
+    expect(markup).not.toContain('data-seotda-field="own-stack"');
     expect(markup).toContain('data-seotda-field="own-bet"');
     expect(markup).toContain('data-seotda-field="own-rank"');
     expect(markup).toContain('data-seotda-field="player-name-p1"');
     expect(markup).toContain('data-seotda-field="player-money-p1"');
-    expect(markup).toContain('data-seotda-field="player-remaining-p1"');
+    expect(markup).not.toContain('data-seotda-field="player-remaining-p1"');
     expect(markup).toContain('data-seotda-field="player-bet-p1"');
     expect(markup).toContain('data-seotda-field="player-profile-card-p1"');
-    expect(markup).toMatch(/data-seotda-field="player-profile-card-p1"[^>]*col-span-3[^>]*row-span-5/);
+    expect(markup).toMatch(/data-seotda-field="player-profile-card-p1"[^>]*col-span-3[^>]*row-span-4/);
     expect(markup).toContain('data-seotda-field="player-name-p2"');
     expect(markup).toContain('data-seotda-field="player-profile-card-p2"');
     expect(markup).not.toContain('data-seotda-field="player-info-p1"');
@@ -56,8 +56,10 @@ describe("SeotdaGamePanel", () => {
     expect(markup).toContain('data-seotda-field="action-quarter"');
     expect(markup).toContain('data-seotda-field="action-half"');
     expect(markup).toContain('data-seotda-field="pot-summary"');
-    expect(markup).toContain("12,345");
-    expect(markup).toContain("6,789");
+    expect(markup).toMatch(/data-seotda-field="player-money-p1"[^>]*><span[^>]*>22,345<\/span>/);
+    expect(markup).toMatch(/data-seotda-field="player-money-p2"[^>]*><span[^>]*>16,789<\/span>/);
+    expect(markup).toContain("베팅금액");
+    expect(markup).not.toContain("남은 금액");
   });
 
   it("shows the opponent's latest action and current pot", () => {
@@ -79,6 +81,32 @@ describe("SeotdaGamePanel", () => {
     expect(markup).toContain("하나 · 쿼터 +25");
     expect(markup).toContain("현재 팟");
     expect(markup).toContain(">25</strong>");
+  });
+
+  it("shows the post-bet money total without a duplicate remaining-amount field", () => {
+    const game = createSeotdaGame(
+      100,
+      [
+        { id: "p1", name: "하나", seat: 0 },
+        { id: "p2", name: "둘", seat: 1 },
+      ],
+      100,
+      () => 0.1,
+    );
+    const afterQuarter = applySeotdaAction(game, "p1", "quarter", 101);
+    const markup = renderToStaticMarkup(
+      <SeotdaGamePanel
+        game={afterQuarter}
+        playerId="p1"
+        onAction={() => {}}
+        participantMoney={{ p1: 900, p2: 800 }}
+      />,
+    );
+
+    expect(markup).toMatch(/data-seotda-field="player-money-p1"[^>]*><span[^>]*>975<\/span>/);
+    expect(markup).not.toContain('data-seotda-field="player-remaining-p1"');
+    expect(markup).not.toContain('data-seotda-field="own-stack"');
+    expect(markup).toContain("내 베팅금액");
   });
 
   it("enables the required response when the turn returns after an opponent bet", () => {

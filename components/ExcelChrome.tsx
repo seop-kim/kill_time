@@ -372,22 +372,45 @@ function StackBtn({ label, icon, onClick, selected, trigger, buttonRef }: { labe
 }
 
 export function SeotdaHandRankTooltip() {
-  const ranks = [
-    ["38광땡", "광땡 중 최고"],
-    ["18광땡 · 13광땡", "광땡"],
-    ["10땡 ~ 1땡", "같은 숫자 두 장"],
-    ["알리 · 독사 · 구삥", "특수 족보"],
-    ["장삥 · 장사 · 세륙", "특수 족보"],
-    ["9끗 ~ 0끗", "끗수"],
+  const ranks: Array<[string, string]> = [
+    ["38광땡", "광땡"],
+    ["18광땡", "광땡"],
+    ["13광땡", "광땡"],
+    ["10땡", "땡"],
+    ["9땡", "땡"],
+    ["8땡", "땡"],
+    ["7땡", "땡"],
+    ["6땡", "땡"],
+    ["5땡", "땡"],
+    ["4땡", "땡"],
+    ["3땡", "땡"],
+    ["2땡", "땡"],
+    ["1땡", "땡"],
+    ["알리", "특수 족보"],
+    ["독사", "특수 족보"],
+    ["구삥", "특수 족보"],
+    ["장삥", "특수 족보"],
+    ["장사", "특수 족보"],
+    ["세륙", "특수 족보"],
+    ["9끗", "끗"],
+    ["8끗", "끗"],
+    ["7끗", "끗"],
+    ["6끗", "끗"],
+    ["5끗", "끗"],
+    ["4끗", "끗"],
+    ["3끗", "끗"],
+    ["2끗", "끗"],
+    ["1끗", "끗"],
+    ["0끗", "끗"],
   ];
 
   return (
-    <div role="tooltip" aria-label="Up 족보" className="w-[230px] rounded-sm border border-[#c8c8c8] bg-white p-2.5 text-[10px] text-[#333] shadow-md">
+    <div role="tooltip" aria-label="Up 족보" className="w-[250px] rounded-sm border border-[#c8c8c8] bg-white p-2.5 text-[10px] text-[#333] shadow-md">
       <div className="border-b border-[#ededed] pb-1.5 text-[12px] font-semibold text-[#1f4e79]">Up 족보</div>
-      <div className="mt-1.5 flex flex-col gap-1">
+      <div className="mt-1.5 flex max-h-[390px] flex-col gap-1 overflow-y-auto pr-1">
         {ranks.map(([name, description], index) => (
-          <div key={name} className="flex items-center gap-2 whitespace-nowrap">
-            <span className="w-4 text-right font-semibold text-[#217346]">{index + 1}</span>
+          <div key={name} className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+            <span className="w-5 shrink-0 text-right font-semibold text-[#217346]">{index + 1}</span>
             <span className="font-medium">{name}</span>
             <span className="ml-auto text-[9px] text-[#777]">{description}</span>
           </div>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getOrCreateUserId, loadNickname } from "@/lib/identity";
-import { ensureWallet, exchangeCoinMoney, subscribeWallet, type WalletProfile } from "@/lib/wallet";
+import { ensureWallet, exchangeCoinMoney, getWalletForAction, subscribeWallet, type WalletProfile } from "@/lib/wallet";
 import { ExchangeSheet, type ExchangeDirection } from "@/components/ExchangeSheet";
 import { WorkspaceChrome } from "@/components/WorkspaceChrome";
 import { useToast } from "@/components/Toast";
@@ -52,6 +52,7 @@ export default function ExchangePage() {
     if (!userId) return;
     try {
       await exchangeCoinMoney(userId, direction, amount);
+      setWallet(await getWalletForAction(userId));
       showToast("환전이 완료되었습니다.", "info");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "환전을 처리하지 못했습니다.", "error");

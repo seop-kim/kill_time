@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH, type RoomGameId } from "@/lib/rooms";
 import { canAffordSeotdaStake, SEOTDA_STAKE_MIN } from "@/lib/economy";
 import { getOrCreateUserId, loadNickname, saveIdentity } from "@/lib/identity";
-import { claimDailyAttendance, ensureWallet, subscribeWallet, type WalletProfile } from "@/lib/wallet";
+import { claimDailyAttendance, ensureWallet, getWalletForAction, subscribeWallet, type WalletProfile } from "@/lib/wallet";
 import { useToast } from "@/components/Toast";
 import { DocumentJoinDialog } from "@/components/HomeAccess";
 import { WorkspaceHome } from "@/components/WorkspaceHome";
@@ -19,7 +19,6 @@ export default function WorkspacePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
   const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
-  const [walletLoaded, setWalletLoaded] = useState(false);
   const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
   const [joinOpen, setJoinOpen] = useState(false);
   const [roomCode, setRoomCode] = useState("");
@@ -44,7 +43,6 @@ export default function WorkspacePage() {
     });
     return subscribeWallet(id, (nextWallet) => {
       setWallet(nextWallet);
-      setWalletLoaded(true);
     });
   }, [router, showToast]);
 
@@ -76,13 +74,12 @@ export default function WorkspacePage() {
 
   async function handleCreateDocument() {
     if (!userId || busy) return;
+    let currentWallet = wallet;
     if (createGameId === "seotda") {
-      if (!walletLoaded) {
-        showToast("머니 정보를 확인하는 중입니다. 잠시 후 다시 시도해 주세요.", "info");
-        return;
-      }
       try {
-        if (!canAffordSeotdaStake(wallet.money, createMoneyStake)) {
+        currentWallet = await getWalletForAction(userId);
+        setWallet(currentWallet);
+        if (!canAffordSeotdaStake(currentWallet.money, createMoneyStake)) {
           showToast("Up 판돈보다 머니가 부족합니다.", "error");
           return;
         }
@@ -93,7 +90,7 @@ export default function WorkspacePage() {
     }
     setBusy(true);
     try {
-      const code = await createRoom(nickname, createGameId, createMoneyStake, wallet.money, userId);
+      const code = await createRoom(nickname, createGameId, createMoneyStake, currentWallet.money, userId);
       saveIdentity(code, { role: "host", name: nickname, userId });
       setCreateOpen(false);
       router.push(`/room/${code}`);
@@ -106,10 +103,6 @@ export default function WorkspacePage() {
 
   async function handleJoinDocument() {
     if (!userId || busy) return;
-    if (!walletLoaded) {
-      showToast("머니 정보를 확인하는 중입니다. 잠시 후 다시 시도해 주세요.", "info");
-      return;
-    }
     const code = normalizeRoomCode(roomCode);
     if (code.length !== ROOM_CODE_LENGTH) {
       showToast(`문서 코드는 ${ROOM_CODE_LENGTH}자입니다.`, "error");
@@ -117,7 +110,9 @@ export default function WorkspacePage() {
     }
     setBusy(true);
     try {
-      const result = await joinRoom(code, nickname, wallet.money, userId);
+      const currentWallet = await getWalletForAction(userId);
+      setWallet(currentWallet);
+      const result = await joinRoom(code, nickname, currentWallet.money, userId);
       if (!result.ok) {
         if (result.reason === "not-found") {
           router.push(`/room/${code}`);

@@ -5,6 +5,7 @@ import {
   applySeotdaStake,
   buildSettlementId,
   normalizeWallet,
+  getWalletForAction,
   shouldClaimAttendance,
   shouldSettleWallet,
 } from "./wallet";
@@ -36,5 +37,11 @@ describe("wallet helpers", () => {
     expect(afterStake).toEqual({ coin: 0, money: 0 });
     expect(applySeotdaPayout(afterStake, 25_000)).toEqual({ coin: 0, money: 25_000 });
     expect(() => applySeotdaStake({ coin: 0, money: 9_999 }, 10_000)).toThrow();
+  });
+
+  it("uses the latest wallet snapshot for money actions", async () => {
+    const latest = await getWalletForAction("user-1", async () => ({ coin: 0, money: 10_000 }));
+
+    expect(latest).toEqual({ coin: 0, money: 10_000 });
   });
 });

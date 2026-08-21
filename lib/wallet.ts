@@ -130,8 +130,16 @@ export function subscribeWallet(userId: string, callback: (wallet: WalletProfile
 }
 
 export async function getWallet(userId: string): Promise<WalletProfile> {
+  await ensureFirebaseAuth();
   const snapshot = await get(ref(getDb(), `profiles/${userId}/wallet`));
   return normalizeWallet(snapshot.val());
+}
+
+export async function getWalletForAction(
+  userId: string,
+  readWallet: (userId: string) => Promise<WalletProfile> = getWallet,
+): Promise<WalletProfile> {
+  return normalizeWallet(await readWallet(userId));
 }
 
 export async function lockSeotdaStake(userId: string, matchId: string, stake: number, now = Date.now()): Promise<boolean> {

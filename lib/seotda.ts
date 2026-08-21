@@ -1,6 +1,7 @@
 import { normalizeSeotdaStake } from "./economy";
 
 export const SEOTDA_MAX_PLAYERS = 6;
+export const SEOTDA_TURN_SECONDS = 30;
 
 export type SeotdaStatus = "betting" | "showdown" | "finished";
 export type SeotdaActionType = "check" | "bet" | "quarter" | "half" | "call" | "raise" | "all-in" | "fold";
@@ -36,7 +37,7 @@ export interface SeotdaLastAction {
   playerId: string;
   action: SeotdaActionType;
   amount: number;
-  round: 1 | 2;
+  round: number;
   at: number;
 }
 
@@ -44,7 +45,7 @@ export interface SeotdaGame {
   matchId: string;
   status: SeotdaStatus;
   stake: number;
-  round: 1 | 2;
+  round: number;
   pot: number;
   currentBet: number;
   minBet: number;
@@ -55,6 +56,11 @@ export interface SeotdaGame {
   lastAction?: SeotdaLastAction;
   deck: SeotdaCard[];
   players: Record<string, SeotdaPlayerState>;
+}
+
+export function getSeotdaRemainingSeconds(turnStartedAt: number, now = Date.now()): number {
+  const elapsed = Math.max(0, Math.floor((now - turnStartedAt) / 1000));
+  return Math.max(0, SEOTDA_TURN_SECONDS - elapsed);
 }
 
 const CARD_DEFINITIONS: Array<Pick<SeotdaCard, "value" | "isGwang">> = [
@@ -122,6 +128,10 @@ function firstBettingPlayerId(game: SeotdaGame): string | null {
   return activePlayers(game).find((player) => player.stack > 0)?.id ?? null;
 }
 
+function canContinueBetting(game: SeotdaGame): boolean {
+  return activePlayers(game).filter((player) => player.stack > 0).length >= 2;
+}
+
 function isRoundComplete(game: SeotdaGame): boolean {
   const players = activePlayers(game);
   return players.length <= 1 || players.every((player) => player.acted && (player.committed === game.currentBet || player.stack === 0));
@@ -143,22 +153,22 @@ function finishBettingRound(game: SeotdaGame, now: number): void {
 
   if (game.round === 1) {
     dealSecondCards(game);
-    game.round = 2;
-    game.currentBet = 0;
-    for (const player of Object.values(game.players)) player.acted = player.folded || player.stack === 0;
-    const nextPlayerId = firstBettingPlayerId(game);
-    if (!nextPlayerId) {
-      game.status = "showdown";
-      game.currentPlayerId = null;
-      return;
-    }
-    game.currentPlayerId = nextPlayerId;
-    game.turnStartedAt = now;
+  }
+  game.round += 1;
+  if (!canContinueBetting(game)) {
+    game.status = "showdown";
+    game.currentPlayerId = null;
     return;
   }
-
-  game.status = "showdown";
-  game.currentPlayerId = null;
+  for (const player of Object.values(game.players)) player.acted = player.folded || player.stack === 0;
+  const nextPlayerId = firstBettingPlayerId(game);
+  if (!nextPlayerId) {
+    game.status = "showdown";
+    game.currentPlayerId = null;
+    return;
+  }
+  game.currentPlayerId = nextPlayerId;
+  game.turnStartedAt = now;
 }
 
 function advanceTurn(game: SeotdaGame, playerId: string, now: number): void {
@@ -327,6 +337,18 @@ export function applySeotdaAction(game: SeotdaGame, playerId: string, action: Se
   next.lastAction = { playerId, action, amount: committedAmount, round: next.round, at: now };
   advanceTurn(next, playerId, now);
   return next;
+}
+
+export function expireSeotdaTurn(game: SeotdaGame, now = Date.now()): SeotdaGame {
+  if (
+    game.status !== "betting" ||
+    !game.currentPlayerId ||
+    getSeotdaRemainingSeconds(game.turnStartedAt, now) > 0
+  ) {
+    return game;
+  }
+
+  return applySeotdaAction(game, game.currentPlayerId, "fold", now);
 }
 
 export function getSeotdaWinners(game: SeotdaGame): string[] {

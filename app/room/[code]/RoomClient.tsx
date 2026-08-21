@@ -66,7 +66,7 @@ import {
   type GirinGame,
 } from "@/lib/girin";
 import { getGirinCoinReward, getOmokCoinReward } from "@/lib/economy";
-import { settleCoinReward, subscribeWallet, type WalletProfile } from "@/lib/wallet";
+import { getWalletForAction, settleCoinReward, subscribeWallet } from "@/lib/wallet";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
   recordGameResult,
@@ -88,7 +88,7 @@ import { GirinGamePanel } from "@/components/GirinGamePanel";
 import { WorkCoverSheet } from "@/components/WorkCoverSheet";
 import { DocumentSettingsDialog } from "@/components/DocumentSettingsDialog";
 import { SeotdaGamePanel } from "@/components/SeotdaGamePanel";
-import { getLegalSeotdaActions, type SeotdaActionType } from "@/lib/seotda";
+import { getSeotdaRemainingSeconds } from "@/lib/seotda";
 import { ErrorPage } from "@/components/ErrorPage";
 import { toggleChatOpen } from "@/lib/chat";
 
@@ -191,8 +191,6 @@ export default function RoomClient({ code }: { code: string }) {
   const [eraserWidth, setEraserWidth] = useState(1);
   const [drawingClearVersion, setDrawingClearVersion] = useState(0);
   const [sensitiveMode, setSensitiveMode] = useState(false);
-  const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
-  const [walletLoaded, setWalletLoaded] = useState(false);
   const [participantMoney, setParticipantMoney] = useState<Record<string, number>>({});
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
@@ -236,14 +234,6 @@ export default function RoomClient({ code }: { code: string }) {
     if (loaded.userId !== userId) saveIdentity(code, upgraded);
     setIdentity(upgraded);
   }, [code]);
-
-  useEffect(() => {
-    const userId = identity?.userId ?? getOrCreateUserId();
-    return subscribeWallet(userId, (nextWallet) => {
-      setWallet(nextWallet);
-      setWalletLoaded(true);
-    });
-  }, [identity?.userId]);
 
   useEffect(() => {
     const participants = room && activeGameId === "seotda"
@@ -592,18 +582,11 @@ export default function RoomClient({ code }: { code: string }) {
 
       let interval: ReturnType<typeof setInterval> | null = null;
       function tickSeotda() {
-        const elapsed = Math.floor((Date.now() - seotdaTurnStartedAt!) / 1000);
-        const remaining = Math.max(0, TURN_SECONDS - elapsed);
+        const remaining = getSeotdaRemainingSeconds(seotdaTurnStartedAt!);
         setTimerSeconds(remaining);
         if (remaining <= 0) {
           if (interval) clearInterval(interval);
-          const legalActions = getLegalSeotdaActions(seotdaGame!, seotdaCurrentPlayerId!);
-          const timeoutAction: SeotdaActionType = legalActions.includes("call")
-            ? "call"
-            : legalActions.includes("check")
-              ? "check"
-              : "fold";
-          applySeotdaActionToRoom(code, seotdaCurrentPlayerId!, timeoutAction).catch(() => {});
+          applySeotdaActionToRoom(code, seotdaCurrentPlayerId!, "fold").catch(() => {});
         }
       }
       tickSeotda();
@@ -726,14 +709,11 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("표시 이름은 2~8자로 입력해 주세요.", "error");
       return;
     }
-    if (!walletLoaded) {
-      showToast("머니 정보를 확인하는 중입니다. 잠시 후 다시 시도해 주세요.", "info");
-      return;
-    }
     setJoining(true);
     try {
       const userId = getOrCreateUserId();
-      const result = await joinRoom(code, trimmed, wallet.money, userId);
+      const currentWallet = await getWalletForAction(userId);
+      const result = await joinRoom(code, trimmed, currentWallet.money, userId);
       if (!result.ok) {
         showToast(
           result.reason === "not-found"
@@ -811,6 +791,7 @@ export default function RoomClient({ code }: { code: string }) {
     if (activeGameId === "seotda") {
       if (identity.role !== "host") return;
       try {
+        await getWalletForAction(identity.userId ?? getOrCreateUserId());
         const result = await startSeotdaGame(code);
         if (!result.ok) {
           if (result.reason === "insufficient-funds") {

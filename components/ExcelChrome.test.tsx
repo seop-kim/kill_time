@@ -430,10 +430,42 @@ describe("ExcelChrome", () => {
 
     expect(markup).toContain('role="tooltip"');
     expect(markup).toContain("Up 족보");
-    expect(markup).toContain("38광땡");
-    expect(markup).toContain("10땡");
-    expect(markup).toContain("알리");
-    expect(markup).toContain("9끗");
+    for (const ranking of [
+      "38광땡",
+      "18광땡",
+      "13광땡",
+      "10땡",
+      "9땡",
+      "8땡",
+      "7땡",
+      "6땡",
+      "5땡",
+      "4땡",
+      "3땡",
+      "2땡",
+      "1땡",
+      "알리",
+      "독사",
+      "구삥",
+      "장삥",
+      "장사",
+      "세륙",
+      "9끗",
+      "8끗",
+      "7끗",
+      "6끗",
+      "5끗",
+      "4끗",
+      "3끗",
+      "2끗",
+      "1끗",
+      "0끗",
+    ]) {
+      expect(markup).toContain(ranking);
+    }
+    expect(markup).not.toContain("18광땡 · 13광땡");
+    expect(markup).not.toContain("알리 · 독사 · 구삥");
+    expect(markup).toContain("높은 족보부터 표시됩니다.");
   });
 
   it("shows girin quiz records with its own metrics", () => {
