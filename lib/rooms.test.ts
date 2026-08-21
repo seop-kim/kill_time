@@ -8,6 +8,7 @@ import {
   getGameCandidates,
   normalizeRoomGameId,
   applyRoomGameSelection,
+  applyRoomGameSettings,
   clearRoomIfEmpty,
   finishSoloGirinInRoom,
   buildChatLogUpdates,
@@ -350,6 +351,7 @@ describe("match participation", () => {
 describe("room game selection", () => {
   it("keeps known room game ids and falls back to omok for old rooms", () => {
     expect(normalizeRoomGameId("girin")).toBe("girin");
+    expect(normalizeRoomGameId("seotda")).toBe("seotda");
     expect(normalizeRoomGameId("legacy-game")).toBe("omok");
     expect(normalizeRoomGameId(undefined)).toBe("omok");
   });
@@ -370,5 +372,39 @@ describe("room game selection", () => {
     expect(selected.gameId).toBe("girin");
     expect(selected.host).toEqual(room.host);
     expect(selected.guest).toEqual(room.guest);
+  });
+
+  it("stores a validated Seotda stake in waiting-room settings", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: null,
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    const selected = applyRoomGameSettings(room, "seotda", 50_000);
+
+    expect(selected.gameId).toBe("seotda");
+    expect(selected.moneyStake).toBe(50_000);
+    expect(() => applyRoomGameSettings(room, "seotda", 0)).toThrow();
+  });
+
+  it("does not change the game or stake after a room starts playing", () => {
+    const room: Room = {
+      host: { name: "Host" },
+      guest: { id: "guest", name: "Guest" },
+      gameId: "seotda",
+      moneyStake: 100,
+      blackPlayer: "host",
+      turn: "black",
+      status: "playing",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(applyRoomGameSettings(room, "omok", 1_000)).toBe(room);
   });
 });

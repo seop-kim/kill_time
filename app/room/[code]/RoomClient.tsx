@@ -34,7 +34,7 @@ import {
   skipTurn,
   subscribeChat,
   subscribeRoom,
-  setRoomGame,
+  setRoomSettings,
   transferOfflineHostInRoom,
   toggleMatchParticipation,
   DISCONNECT_GRACE_MS,
@@ -45,7 +45,9 @@ import {
   type ParticipantRole,
   type PlayerRole,
   type Room,
+  type RoomGameId,
 } from "@/lib/rooms";
+import { SEOTDA_STAKE_MIN } from "@/lib/economy";
 import {
   addGirinPixels,
   advanceGirinRoundInRoom,
@@ -79,6 +81,8 @@ import {
 import { ChatPanel } from "@/components/ChatPanel";
 import { GirinGamePanel } from "@/components/GirinGamePanel";
 import { WorkCoverSheet } from "@/components/WorkCoverSheet";
+import { DocumentSettingsDialog } from "@/components/DocumentSettingsDialog";
+import { SeotdaGamePanel } from "@/components/SeotdaGamePanel";
 import { ErrorPage } from "@/components/ErrorPage";
 import { toggleChatOpen } from "@/lib/chat";
 
@@ -92,6 +96,7 @@ const MOVE_TAG_MS = 5000;
 const GAMES: GameTab[] = [
   { id: "omok", label: "Omok", available: true },
   { id: "girin", label: "girin", available: true },
+  { id: "seotda", label: "섯다", available: true },
   { id: "baseball", label: "Baseball", available: false },
   { id: "janggi", label: "Janggi", available: false },
 ];
@@ -165,6 +170,9 @@ export default function RoomClient({ code }: { code: string }) {
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
   const [showMoveTag, setShowMoveTag] = useState(false);
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
+  const [documentSettingsOpen, setDocumentSettingsOpen] = useState(false);
+  const [pendingGameId, setPendingGameId] = useState<RoomGameId>("omok");
+  const [pendingMoneyStake, setPendingMoneyStake] = useState(SEOTDA_STAKE_MIN);
   const [kickTarget, setKickTarget] = useState<MatchParticipant | null>(null);
   const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
   const [drawingColor, setDrawingColor] = useState("#222222");
@@ -627,6 +635,10 @@ export default function RoomClient({ code }: { code: string }) {
 
   function requestStartGame() {
     if (!room || !identity) return;
+    if (activeGameId === "seotda") {
+      showToast("섯다 게임 화면은 준비 중입니다.", "info");
+      return;
+    }
     if (activeGameId === "girin") {
       const girinStatus = room.girinGame?.status ?? "waiting";
       if (girinStatus !== "waiting") {
@@ -759,9 +771,36 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("방장만 게임을 변경할 수 있습니다.", "info");
       return;
     }
+    if (currentGameStatus !== "waiting" && currentGameStatus !== "finished") {
+      showToast("게임 진행 중에는 게임을 변경할 수 없습니다.", "info");
+      return;
+    }
     const nextGameId = normalizeRoomGameId(id);
     if (nextGameId === activeGameId) return;
-    setRoomGame(code, nextGameId).catch(() => showToast("게임을 변경하지 못했습니다.", "error"));
+    setRoomSettings(code, nextGameId, nextGameId === "seotda" ? room?.moneyStake ?? SEOTDA_STAKE_MIN : SEOTDA_STAKE_MIN)
+      .catch(() => showToast("게임을 변경하지 못했습니다.", "error"));
+  }
+
+  function openDocumentSettings() {
+    if (!room || identity?.role !== "host") return;
+    if (currentGameStatus !== "waiting" && currentGameStatus !== "finished") {
+      showToast("게임 진행 중에는 문서 설정을 변경할 수 없습니다.", "info");
+      return;
+    }
+    setPendingGameId(activeGameId);
+    setPendingMoneyStake(room.moneyStake ?? SEOTDA_STAKE_MIN);
+    setDocumentSettingsOpen(true);
+  }
+
+  async function handleSaveDocumentSettings() {
+    if (!room || identity?.role !== "host") return;
+    try {
+      await setRoomSettings(code, pendingGameId, pendingMoneyStake);
+      setDocumentSettingsOpen(false);
+      showToast("문서 설정을 저장했습니다.", "info");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "문서 설정을 저장하지 못했습니다.", "error");
+    }
   }
 
   async function handleCopyCode() {
@@ -1032,7 +1071,9 @@ export default function RoomClient({ code }: { code: string }) {
             ? "종료"
             : "대기 중";
   const canStartGame =
-    activeGameId === "girin"
+    activeGameId === "seotda"
+      ? false
+      : activeGameId === "girin"
       ? girinStatus === "waiting" && identity.role === "host"
       : room.status === "waiting";
 
@@ -1087,6 +1128,7 @@ export default function RoomClient({ code }: { code: string }) {
         startActionLabel={activeGameId === "girin" ? "게임 시작" : "대진 참여"}
         onRestart={currentGameStatus === "finished" && identity.role === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
+        onDocumentSettings={identity.role === "host" ? openDocumentSettings : undefined}
         canKickParticipants={identity.role === "host" && currentGameStatus === "waiting"}
         onKickParticipant={handleKickParticipant}
         timerSeconds={timerSeconds}
@@ -1154,6 +1196,8 @@ export default function RoomClient({ code }: { code: string }) {
               advanceGirinRoundInRoom(code).catch(() => showToast("다음 문제로 넘어가지 못했습니다.", "error"));
             }}
           />
+        ) : activeGameId === "seotda" ? (
+          <SeotdaGamePanel moneyStake={room.moneyStake ?? SEOTDA_STAKE_MIN} />
         ) : (
           <div className="h-full overflow-auto" ref={centerGridOnMount}>
             <div
@@ -1215,6 +1259,18 @@ export default function RoomClient({ code }: { code: string }) {
             : "두 명이 대진에 참여하면 자동으로 게임이 시작됩니다."
         }
         confirmLabel={activeGameId === "girin" ? "시작" : "참여하기"}
+      />
+
+      <DocumentSettingsDialog
+        open={documentSettingsOpen}
+        title="문서 설정"
+        gameId={pendingGameId}
+        moneyStake={pendingMoneyStake}
+        submitLabel="저장"
+        onGameChange={setPendingGameId}
+        onMoneyStakeChange={setPendingMoneyStake}
+        onSubmit={handleSaveDocumentSettings}
+        onClose={() => setDocumentSettingsOpen(false)}
       />
 
       <StartGameConfirmDialog

@@ -1,0 +1,34 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomCode": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "profiles": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "walletLedger": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "walletExchanges": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "chatLogs": {
+      "$roomCode": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

@@ -686,11 +686,13 @@ const RIBBON_TOOLBAR_SCALE = 1.1;
 const zoomStyle = { zoom: EXCEL_FHD_ZOOM } as React.CSSProperties;
 
 export function SettingsDropdown({
+  onDocumentSettings,
   onStartGame,
   startLabel = "게임 시작",
   onRestart,
   onLeave,
 }: {
+  onDocumentSettings?: () => void;
   onStartGame?: () => void;
   startLabel?: string;
   onRestart?: () => void;
@@ -698,6 +700,11 @@ export function SettingsDropdown({
 }) {
   return (
     <div className="absolute right-0 top-[26px] z-50 flex flex-col items-stretch bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1 w-[140px] text-[11px] text-[#333]">
+      {onDocumentSettings && (
+        <button onClick={onDocumentSettings} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
+          문서 설정
+        </button>
+      )}
       {onStartGame && (
         <button onClick={onStartGame} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
           {startLabel}
@@ -847,6 +854,7 @@ export function ExcelChrome({
   rematchLabel,
   onRematch,
   onStartGame,
+  onDocumentSettings,
   startActionLabel = "게임 시작",
   onRestart,
   onLeave,
@@ -884,6 +892,7 @@ export function ExcelChrome({
   rematchLabel?: string;
   onRematch?: () => void;
   onStartGame?: () => void;
+  onDocumentSettings?: () => void;
   startActionLabel?: string;
   onRestart?: () => void;
   onLeave?: () => void;
@@ -990,10 +999,18 @@ export function ExcelChrome({
             >
               <GearIcon />
             </button>
-            {settingsOpen && (onStartGame || onRestart || onLeave) && (
+            {settingsOpen && (onDocumentSettings || onStartGame || onRestart || onLeave) && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setSettingsOpen(false)} />
                 <SettingsDropdown
+                  onDocumentSettings={
+                    onDocumentSettings
+                      ? () => {
+                          setSettingsOpen(false);
+                          onDocumentSettings();
+                        }
+                      : undefined
+                  }
                   onStartGame={
                     onStartGame
                       ? () => {

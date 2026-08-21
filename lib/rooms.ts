@@ -1,11 +1,12 @@
 import { get, onDisconnect, onValue, push, ref, runTransaction, set, update } from "firebase/database";
 import { getDb } from "./firebase";
+import { normalizeSeotdaStake, SEOTDA_STAKE_MIN } from "./economy";
 import { cellKey, type Board, type Stone } from "./gomoku";
 import { finishGirinGameIfSolo, type GirinGame } from "./girin";
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
-export type RoomGameId = "omok" | "girin";
+export type RoomGameId = "omok" | "girin" | "seotda";
 
 export interface Player {
   id?: string;
@@ -96,11 +97,28 @@ export const DISCONNECT_GRACE_MS = 15000;
 export const PARTICIPANT_REMOVAL_GRACE_MS = 20000;
 
 export function normalizeRoomGameId(value: unknown): RoomGameId {
-  return value === "girin" ? "girin" : "omok";
+  if (value === "girin" || value === "seotda") return value;
+  return "omok";
 }
 
 export function applyRoomGameSelection(room: Room, gameId: RoomGameId): Room {
   return { ...room, gameId };
+}
+
+export function applyRoomGameSettings(
+  room: Room,
+  gameId: RoomGameId,
+  moneyStake = room.moneyStake ?? SEOTDA_STAKE_MIN,
+): Room {
+  if (room.status === "playing") return room;
+
+  if (gameId === "seotda") {
+    return { ...room, gameId, moneyStake: normalizeSeotdaStake(moneyStake) };
+  }
+
+  const nextRoom = { ...room, gameId };
+  delete nextRoom.moneyStake;
+  return nextRoom;
 }
 
 // no 0/O/1/I — easy to misread when typed in by hand
@@ -316,7 +334,18 @@ function roomRef(code: string) {
 export async function setRoomGame(code: string, gameId: RoomGameId): Promise<void> {
   await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room) return room;
-    return applyRoomGameSelection(room, gameId);
+    return applyRoomGameSettings(room, gameId);
+  });
+}
+
+export async function setRoomSettings(
+  code: string,
+  gameId: RoomGameId,
+  moneyStake = SEOTDA_STAKE_MIN,
+): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room) return room;
+    return applyRoomGameSettings(room, gameId, moneyStake);
   });
 }
 
@@ -329,7 +358,11 @@ export function finishSoloGirinInRoom(room: Room, now = Date.now()): Room {
   return { ...room, girinGame: nextGirinGame };
 }
 
-export async function createRoom(hostName: string): Promise<string> {
+export async function createRoom(
+  hostName: string,
+  gameId: RoomGameId = "omok",
+  moneyStake = SEOTDA_STAKE_MIN,
+): Promise<string> {
   let code = generateRoomCode();
   for (let attempt = 0; attempt < 5; attempt++) {
     const snap = await get(roomRef(code));
@@ -338,7 +371,7 @@ export async function createRoom(hostName: string): Promise<string> {
   }
 
   const room: Room = {
-    gameId: "omok",
+    gameId,
     host: { name: hostName },
     guest: null,
     blackPlayer: "host",
@@ -350,6 +383,7 @@ export async function createRoom(hostName: string): Promise<string> {
     undoRequest: null,
     drawRequest: null,
   };
+  if (gameId === "seotda") room.moneyStake = normalizeSeotdaStake(moneyStake);
   await set(roomRef(code), room);
   return code;
 }

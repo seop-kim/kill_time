@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH } from "@/lib/rooms";
+import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH, type RoomGameId } from "@/lib/rooms";
+import { SEOTDA_STAKE_MIN } from "@/lib/economy";
 import { getOrCreateUserId, loadNickname, saveIdentity } from "@/lib/identity";
 import { ensureWallet, getKstDateKey, claimDailyAttendance, subscribeAttendance, subscribeWallet, type WalletProfile } from "@/lib/wallet";
 import { saveProfileNickname } from "@/lib/profile";
 import { useToast } from "@/components/Toast";
 import { DocumentJoinDialog } from "@/components/HomeAccess";
 import { WorkspaceHome } from "@/components/WorkspaceHome";
+import { DocumentSettingsDialog } from "@/components/DocumentSettingsDialog";
 
 export default function WorkspacePage() {
   const router = useRouter();
@@ -21,6 +23,9 @@ export default function WorkspacePage() {
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [attendanceBusy, setAttendanceBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createGameId, setCreateGameId] = useState<RoomGameId>("omok");
+  const [createMoneyStake, setCreateMoneyStake] = useState(SEOTDA_STAKE_MIN);
 
   useEffect(() => {
     const id = getOrCreateUserId();
@@ -48,8 +53,9 @@ export default function WorkspacePage() {
     if (!userId || busy) return;
     setBusy(true);
     try {
-      const code = await createRoom(nickname);
+      const code = await createRoom(nickname, createGameId, createMoneyStake);
       saveIdentity(code, { role: "host", name: nickname, userId });
+      setCreateOpen(false);
       router.push(`/room/${code}`);
     } catch {
       showToast("문서를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
@@ -108,7 +114,7 @@ export default function WorkspacePage() {
         wallet={wallet}
         attendanceClaimed={attendanceClaimed}
         attendanceBusy={attendanceBusy}
-        onCreateDocument={handleCreateDocument}
+        onCreateDocument={() => setCreateOpen(true)}
         onOpenJoin={() => setJoinOpen(true)}
         onOpenExchange={() => router.push("/workspace/exchange")}
         onClaimAttendance={handleAttendance}
@@ -121,6 +127,18 @@ export default function WorkspacePage() {
         onClose={() => setJoinOpen(false)}
         onJoin={handleJoinDocument}
         roomCodeLength={ROOM_CODE_LENGTH}
+      />
+      <DocumentSettingsDialog
+        open={createOpen}
+        title="문서 만들기"
+        gameId={createGameId}
+        moneyStake={createMoneyStake}
+        submitLabel="문서 만들기"
+        busy={busy}
+        onGameChange={setCreateGameId}
+        onMoneyStakeChange={setCreateMoneyStake}
+        onSubmit={handleCreateDocument}
+        onClose={() => setCreateOpen(false)}
       />
     </>
   );

@@ -83,12 +83,13 @@ describe("ExcelChrome", () => {
 
   it("keeps both settings actions inside one vertical dropdown", () => {
     const markup = renderToStaticMarkup(
-      <SettingsDropdown onStartGame={() => {}} onRestart={() => {}} onLeave={() => {}} />,
+      <SettingsDropdown onStartGame={() => {}} onRestart={() => {}} onLeave={() => {}} onDocumentSettings={() => {}} />,
     );
 
     expect(markup).toContain("flex flex-col items-stretch");
     expect(markup).toContain("게임 시작");
     expect(markup.indexOf("게임 다시 시작")).toBeLessThan(markup.indexOf("방 나가기"));
+    expect(markup).toContain("문서 설정");
   });
 
   it("places the Copilot launcher beside Add-ins", () => {

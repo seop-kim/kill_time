@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
+import { getAuth, signInAnonymously, type Auth, type User } from "firebase/auth";
 import { getDatabase, type Database } from "firebase/database";
 
 const firebaseConfig = {
@@ -13,14 +14,33 @@ const firebaseConfig = {
 
 let app: FirebaseApp | null = null;
 let db: Database | null = null;
+let auth: Auth | null = null;
+
+function getFirebaseApp(): FirebaseApp {
+  if (!app) {
+    app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  }
+  return app;
+}
 
 // Lazy on purpose: this must only run in the browser, once real env vars are
 // filled in. Initializing eagerly at module scope crashes Next.js static
 // prerendering, which evaluates the module graph without env vars available.
 export function getDb(): Database {
   if (!db) {
-    app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-    db = getDatabase(app);
+    db = getDatabase(getFirebaseApp());
   }
   return db;
+}
+
+export function getFirebaseAuth(): Auth {
+  if (!auth) auth = getAuth(getFirebaseApp());
+  return auth;
+}
+
+/** Ensures every Realtime Database request has an authenticated Firebase session. */
+export async function ensureFirebaseAuth(): Promise<User> {
+  const firebaseAuth = getFirebaseAuth();
+  if (firebaseAuth.currentUser) return firebaseAuth.currentUser;
+  return (await signInAnonymously(firebaseAuth)).user;
 }
