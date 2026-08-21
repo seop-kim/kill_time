@@ -6,7 +6,9 @@ function formatAmount(value: number): string {
 
 const ACTION_LABELS: Record<SeotdaActionType, string> = {
   check: "체크",
-  bet: "베팅",
+  bet: "삥",
+  quarter: "쿼터",
+  half: "하프",
   call: "콜",
   raise: "레이즈",
   "all-in": "올인",
@@ -50,8 +52,52 @@ export function SeotdaGamePanel({
   const ownRank = player?.hand.length === 2 ? evaluateSeotdaHand(player.hand as [typeof player.hand[number], typeof player.hand[number]]) : null;
 
   const ownHand = player?.hand ?? [];
-  const actionTypes: SeotdaActionType[] = ["check", "bet", "call", "raise", "all-in", "fold"];
+  const actionTypes: SeotdaActionType[] = ["check", "bet", "quarter", "half", "call", "raise", "all-in", "fold"];
   const winnerNames = game?.winnerIds?.map((id) => game.players[id]?.name).filter(Boolean).join(", ") ?? "";
+  const participantRows = Array.from({ length: 2 }, (_, rowIndex) => players.slice(rowIndex * 4, rowIndex * 4 + 4));
+  const lastAction = game?.lastAction;
+  const lastActionName = lastAction ? game.players[lastAction.playerId]?.name ?? "상대방" : "";
+  const lastActionText = lastAction
+    ? `${lastActionName} · ${ACTION_LABELS[lastAction.action]}${lastAction.amount > 0 ? ` +${formatAmount(lastAction.amount)}` : ""}`
+    : "아직 액션 없음";
+
+  const participantCard = (participant: typeof players[number]) => {
+    const isSelf = participant.id === playerId;
+    const visibleCards = isSelf ? participant.hand : Array.from({ length: Math.max(1, participant.hand.length) }, () => null);
+    const isCurrent = participant.id === game?.currentPlayerId;
+
+    return (
+      <div
+        key={participant.id}
+        data-seotda-field={`player-profile-card-${participant.id}`}
+        className={`col-span-3 row-span-5 grid min-w-0 grid-cols-3 grid-rows-5 overflow-hidden border-2 bg-white ${isCurrent ? "border-[#217346]" : "border-[#b7c9e2]"}`}
+      >
+        <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">닉네임</div>
+        <div data-seotda-field={`player-name-${participant.id}`} className={`col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold ${isCurrent ? "text-[#217346]" : "text-[#333]"}`} title={participant.name}>
+          <span className="block truncate">{participant.name}{isCurrent ? " ◀" : ""}</span>
+        </div>
+        <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">머니</div>
+        <div data-seotda-field={`player-money-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold text-[#333]"><span className="block truncate">{participantMoney[participant.id] == null ? "-" : formatAmount(participantMoney[participant.id])}</span></div>
+        <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">스택</div>
+        <div data-seotda-field={`player-stack-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold text-[#333]"><span className="block truncate">{formatAmount(participant.stack)}</span></div>
+        <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">베팅</div>
+        <div data-seotda-field={`player-bet-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold text-[#333]"><span className="block truncate">{formatAmount(participant.committed)}</span></div>
+        <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">패</div>
+        <div data-seotda-field={`player-card-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 text-center">
+          {visibleCards.map((card, index) => (
+            <span key={`${participant.id}-card-${index}`} className="mr-1 inline-block rounded-sm border border-[#b7c9e2] bg-[#f3f8fc] px-1 py-0.5 font-semibold text-[#1f4e79]">
+              {card ? `${card.value}${card.isGwang ? "광" : "월"}` : "패"}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const emptyParticipantCards = (rowIndex: number) => Array.from(
+    { length: 4 - participantRows[rowIndex].length },
+    (_, participantIndex) => <div key={`empty-participant-${rowIndex}-${participantIndex}`} className="col-span-3 row-span-5 border-2 border-[#e8edf3] bg-white" />,
+  );
 
   return (
     <div className="h-full overflow-auto bg-white">
@@ -64,7 +110,7 @@ export function SeotdaGamePanel({
         ))}
 
         <div className="sticky left-0 z-10 border border-[#d9e2f3] bg-[#f2f2f2] text-center text-[#49637a]">1</div>
-        <div data-seotda-field="game-title" className="col-span-2 min-w-0 border border-[#b7c9e2] bg-[#eaf2f8] px-2 py-1 font-semibold text-[#1f4e79]">섯다</div>
+        <div data-seotda-field="game-title" className="col-span-2 min-w-0 border border-[#b7c9e2] bg-[#eaf2f8] px-2 py-1 font-semibold text-[#1f4e79]">Up</div>
         <div data-seotda-field="stake-label" className="col-span-2 min-w-0 border border-[#d9e2f3] bg-[#fffdf2] px-2 py-1 text-[#7f6000]">판돈</div>
         <div data-seotda-field="stake-value" className="col-span-3 min-w-0 border border-[#d9e2f3] bg-[#fffdf2] px-2 py-1 font-semibold whitespace-nowrap text-[#333]">{game ? `${formatAmount(game.stake)} money` : "-"}</div>
         <div data-seotda-field="pot-label" className="col-span-2 min-w-0 border border-[#d9e2f3] bg-white px-2 py-1 text-[#555]">팟</div>
@@ -96,32 +142,17 @@ export function SeotdaGamePanel({
         <div data-seotda-field="own-rank" className="col-span-3 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">족보 <strong className="text-[#1f4e79]">{ownRank?.label ?? "-"}</strong></div>
 
         <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">4</div>
-        {players.map((participant) => (
-          <div key={participant.id} data-seotda-field={`player-info-${participant.id}`} className="col-span-2 min-w-0 border border-[#e8edf3] bg-white px-2 py-1">
-            <div className="whitespace-nowrap font-semibold text-[#333]">{participant.name}{participant.id === game?.currentPlayerId ? " ◀" : ""}</div>
-            <div className="whitespace-nowrap text-[10px] text-[#777]">머니 {participantMoney[participant.id] == null ? "-" : formatAmount(participantMoney[participant.id])} · 스택 {formatAmount(participant.stack)} · 베팅 {formatAmount(participant.committed)}</div>
-          </div>
-        ))}
-        {Array.from({ length: Math.max(0, 6 - players.length) }, (_, index) => <div key={`empty-player-${index}`} className="col-span-2 border border-[#e8edf3] bg-white" />)}
+        {participantRows[0].map(participantCard)}
+        {emptyParticipantCards(0)}
 
-        <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">5</div>
-        {players.map((participant) => {
-          const isSelf = participant.id === playerId;
-          const visibleCards = isSelf ? participant.hand : Array.from({ length: Math.max(1, participant.hand.length) }, () => null);
-          return (
-            <div key={`hand-${participant.id}`} data-seotda-field={`player-card-${participant.id}`} className="col-span-2 min-w-0 border border-[#e8edf3] bg-white px-1 py-1 text-center">
-              <span className="mr-1 text-[10px] text-[#777]">{participant.name}</span>
-              {visibleCards.map((card, index) => (
-                <span key={`${participant.id}-card-${index}`} className="mr-1 inline-block rounded-sm border border-[#b7c9e2] bg-[#f3f8fc] px-1 py-0.5 font-semibold text-[#1f4e79]">
-                  {card ? `${card.value}${card.isGwang ? "광" : "월"}` : "패"}
-                </span>
-              ))}
-            </div>
-          );
-        })}
-        {Array.from({ length: Math.max(0, 6 - players.length) }, (_, index) => <div key={`empty-hand-${index}`} className="col-span-2 border border-[#e8edf3] bg-white" />)}
+        {Array.from({ length: 4 }, (_, row) => <div key={`participant-row-label-a-${row}`} className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">{row + 5}</div>)}
+        <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">9</div>
+        {participantRows[1].map(participantCard)}
+        {emptyParticipantCards(1)}
 
-        <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">6</div>
+        {Array.from({ length: 4 }, (_, row) => <div key={`participant-row-label-b-${row}`} className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">{row + 10}</div>)}
+
+        <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">14</div>
         {actionTypes.map((action) => (
           <div key={action} data-seotda-field={`action-${action}`} className="col-span-1 min-w-0 border border-[#e8edf3] bg-white p-1">
             <button
@@ -134,9 +165,9 @@ export function SeotdaGamePanel({
             </button>
           </div>
         ))}
-        <div data-seotda-field="turn-message" className="col-span-6 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#777]">{isMyTurn ? "내 차례입니다." : "상대방 차례입니다."}</div>
+        <div data-seotda-field="turn-message" className="col-span-4 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#777]">{isMyTurn ? "내 차례입니다." : "상대방 차례입니다."}</div>
 
-        <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">7</div>
+        <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">15</div>
         {game?.status === "finished" ? (
           <>
             <div data-seotda-field="result" className="col-span-8 min-w-0 border border-[#d6c27a] bg-[#fff9df] px-2 py-1 font-semibold whitespace-nowrap text-[#7f6000]">{resultLabel(game, playerId)}</div>
@@ -150,12 +181,19 @@ export function SeotdaGamePanel({
             </div>
           </>
         ) : (
-          Array.from({ length: 12 }, (_, column) => <div key={`empty-result-${column}`} className="border border-[#e8edf3] bg-white" />)
+          <>
+            <div data-seotda-field="last-action" className="col-span-8 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">
+              최근 액션 <strong className="ml-1 font-semibold text-[#333]">{lastActionText}</strong>
+            </div>
+            <div data-seotda-field="pot-summary" className="col-span-4 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">
+              현재 팟 <strong className="ml-1 font-semibold text-[#333]">{formatAmount(game?.pot ?? 0)}</strong>
+            </div>
+          </>
         )}
 
         {Array.from({ length: 7 }, (_, row) => (
           <div key={`row-${row}`} className="contents">
-            <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">{row + 8}</div>
+            <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">{row + 16}</div>
             {Array.from({ length: 12 }, (_, column) => <div key={`cell-${row}-${column}`} className="border border-[#e8edf3] bg-white" />)}
           </div>
         ))}

@@ -73,7 +73,7 @@ export function applySeotdaStake(wallet: WalletProfile, stake: number): WalletPr
 }
 
 export function applySeotdaPayout(wallet: WalletProfile, amount: number): WalletProfile {
-  if (!Number.isInteger(amount) || amount < 0) throw new Error("섯다 정산 금액은 0 이상의 정수여야 합니다.");
+  if (!Number.isInteger(amount) || amount < 0) throw new Error("Up 정산 금액은 0 이상의 정수여야 합니다.");
   return applyWalletDelta(wallet, "money", amount);
 }
 
@@ -170,7 +170,7 @@ export async function lockSeotdaStake(userId: string, matchId: string, stake: nu
 }
 
 export async function settleSeotdaMatch(userId: string, matchId: string, amount: number, now = Date.now()): Promise<boolean> {
-  if (!Number.isInteger(amount) || amount < 0) throw new Error("섯다 정산 금액은 0 이상의 정수여야 합니다.");
+  if (!Number.isInteger(amount) || amount < 0) throw new Error("Up 정산 금액은 0 이상의 정수여야 합니다.");
   const settlementId = buildSettlementId("seotda", matchId);
   let settled = false;
   let balanceAfter = 0;

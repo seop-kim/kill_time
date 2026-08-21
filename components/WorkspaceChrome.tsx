@@ -2,9 +2,16 @@
 
 import { useState, type ReactNode } from "react";
 import { ExcelChrome, type ChromeAvatar, type GameTab } from "./ExcelChrome";
+import type { GameStats } from "@/lib/stats";
 import { WorkCoverSheet } from "./WorkCoverSheet";
 
 export type WorkspaceSheetId = "workspace" | "exchange";
+
+export const WORKSPACE_PROFILE_GAMES: GameTab[] = [
+  { id: "omok", label: "Omok", available: true },
+  { id: "girin", label: "girin", available: true },
+  { id: "seotda", label: "Up", available: true },
+];
 
 export function WorkspaceChrome({
   nickname,
@@ -12,6 +19,7 @@ export function WorkspaceChrome({
   initialSensitiveMode = false,
   onNavigateHome,
   onNavigateExchange,
+  profileStats = {},
   children,
 }: {
   nickname: string;
@@ -19,6 +27,7 @@ export function WorkspaceChrome({
   initialSensitiveMode?: boolean;
   onNavigateHome?: () => void;
   onNavigateExchange?: () => void;
+  profileStats?: Record<string, GameStats>;
   children: ReactNode;
 }) {
   const [sensitiveMode, setSensitiveMode] = useState(initialSensitiveMode);
@@ -39,6 +48,8 @@ export function WorkspaceChrome({
       fileName="문서 허브"
       avatars={[avatar]}
       profileAvatar={avatar}
+      profileStats={profileStats}
+      profileGames={WORKSPACE_PROFILE_GAMES}
       onShare={() => {}}
       games={workspaceTabs}
       activeGameId={activeSheetId}

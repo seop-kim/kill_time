@@ -84,8 +84,13 @@ export function ExchangeSheet({
           {Array.from({ length: EXCHANGE_COLUMN_COUNT - 6 }, (_, index) => <ExchangeCell key={`row-4-cell-${index + 6}`} />)}
 
           <div className="border border-[#d9e2f3] bg-[#f2f2f2] text-center text-[#49637a]">5</div>
-          <ExchangeCell className="font-medium">예상 결과 <strong className="ml-1 font-bold">{validAmount ? formatAmount(preview) : "-"}</strong></ExchangeCell>
-          {Array.from({ length: 4 }, (_, index) => <ExchangeCell key={`row-5-cell-${index + 1}`} />)}
+          <ExchangeCell className="font-medium whitespace-nowrap">
+            <span data-exchange-field="preview-label">예상 결과</span>
+          </ExchangeCell>
+          <ExchangeCell className="font-medium whitespace-nowrap">
+            <strong data-exchange-field="preview-value" className="whitespace-nowrap font-bold">{validAmount ? formatAmount(preview) : "-"}</strong>
+          </ExchangeCell>
+          {Array.from({ length: 3 }, (_, index) => <ExchangeCell key={`row-5-cell-${index + 2}`} />)}
           <ExchangeCell>
             <button type="button" disabled={!validAmount} onClick={() => onExchange(direction, numericAmount)} className="h-full w-full text-center font-medium text-[#333] hover:bg-[#f5f5f5] disabled:cursor-not-allowed disabled:text-[#777] disabled:opacity-100">
               교환하기

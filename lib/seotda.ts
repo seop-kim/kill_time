@@ -3,7 +3,7 @@ import { normalizeSeotdaStake } from "./economy";
 export const SEOTDA_MAX_PLAYERS = 6;
 
 export type SeotdaStatus = "betting" | "showdown" | "finished";
-export type SeotdaActionType = "check" | "bet" | "call" | "raise" | "all-in" | "fold";
+export type SeotdaActionType = "check" | "bet" | "quarter" | "half" | "call" | "raise" | "all-in" | "fold";
 
 export interface SeotdaCard {
   id: string;
@@ -32,6 +32,14 @@ export interface SeotdaPlayerState extends SeotdaPlayerInput {
   acted: boolean;
 }
 
+export interface SeotdaLastAction {
+  playerId: string;
+  action: SeotdaActionType;
+  amount: number;
+  round: 1 | 2;
+  at: number;
+}
+
 export interface SeotdaGame {
   matchId: string;
   status: SeotdaStatus;
@@ -44,6 +52,7 @@ export interface SeotdaGame {
   turnStartedAt: number;
   dealerId: string;
   winnerIds?: string[];
+  lastAction?: SeotdaLastAction;
   deck: SeotdaCard[];
   players: Record<string, SeotdaPlayerState>;
 }
@@ -176,10 +185,10 @@ export function createSeotdaGame(
 ): SeotdaGame {
   const normalizedStake = normalizeSeotdaStake(stake);
   if (players.length < 2 || players.length > SEOTDA_MAX_PLAYERS) {
-    throw new Error(`섯다는 2명부터 ${SEOTDA_MAX_PLAYERS}명까지 참여할 수 있습니다.`);
+    throw new Error(`Up은 2명부터 ${SEOTDA_MAX_PLAYERS}명까지 참여할 수 있습니다.`);
   }
   if (new Set(players.map((player) => player.id)).size !== players.length) {
-    throw new Error("섯다 참여자 ID가 중복되었습니다.");
+    throw new Error("Up 참여자 ID가 중복되었습니다.");
   }
 
   const deck = shuffle(createSeotdaDeck(), random);
@@ -227,6 +236,10 @@ export function evaluateSeotdaHand(hand: [SeotdaCard, SeotdaCard]): SeotdaRank {
   return { category: "kkeut", score: 100 + kkeut, label: `${kkeut}끗` };
 }
 
+function getFractionBetAmount(game: SeotdaGame, fraction: number): number {
+  return Math.max(game.minBet, Math.ceil(Math.max(game.stake, game.pot) * fraction));
+}
+
 export function getLegalSeotdaActions(game: SeotdaGame, playerId: string): SeotdaActionType[] {
   if (game.status !== "betting" || game.currentPlayerId !== playerId) return [];
   const player = game.players[playerId];
@@ -241,6 +254,10 @@ export function getLegalSeotdaActions(game: SeotdaGame, playerId: string): Seotd
     actions.push("call");
     if (player.stack >= toCall + game.minBet) actions.push("raise");
   }
+  const quarterAmount = toCall + getFractionBetAmount(game, 0.25);
+  const halfAmount = toCall + getFractionBetAmount(game, 0.5);
+  if (player.stack >= quarterAmount) actions.push("quarter");
+  if (player.stack >= halfAmount) actions.push("half");
   if (player.stack > 0 && (toCall === 0 || player.stack >= toCall)) actions.push("all-in");
   return actions;
 }
@@ -260,6 +277,7 @@ export function applySeotdaAction(game: SeotdaGame, playerId: string, action: Se
   if (action === "fold") {
     player.folded = true;
     player.acted = true;
+    next.lastAction = { playerId, action, amount: 0, round: next.round, at: now };
     advanceTurn(next, playerId, now);
     return next;
   }
@@ -273,6 +291,12 @@ export function applySeotdaAction(game: SeotdaGame, playerId: string, action: Se
     player.acted = true;
   } else if (action === "raise") {
     committedAmount = toCall + next.minBet;
+    player.acted = true;
+    for (const other of activePlayers(next)) {
+      if (other.id !== playerId && other.stack > 0) other.acted = false;
+    }
+  } else if (action === "quarter" || action === "half") {
+    committedAmount = toCall + getFractionBetAmount(next, action === "quarter" ? 0.25 : 0.5);
     player.acted = true;
     for (const other of activePlayers(next)) {
       if (other.id !== playerId && other.stack > 0) other.acted = false;
@@ -294,6 +318,7 @@ export function applySeotdaAction(game: SeotdaGame, playerId: string, action: Se
     next.pot += committedAmount;
     next.currentBet = Math.max(next.currentBet, player.committed);
   }
+  next.lastAction = { playerId, action, amount: committedAmount, round: next.round, at: now };
   advanceTurn(next, playerId, now);
   return next;
 }
@@ -310,15 +335,19 @@ export function getSeotdaWinners(game: SeotdaGame): string[] {
 }
 
 export function getSeotdaPayouts(game: SeotdaGame): Record<string, number> {
-  const payouts = Object.fromEntries(Object.values(game.players).map((player) => [player.id, player.stack]));
+  const payouts = Object.fromEntries(Object.values(game.players).map((player) => [player.id, 0]));
   const winners = getSeotdaWinners(game);
   if (winners.length === 0) return payouts;
 
-  const share = Math.floor(game.pot / winners.length);
-  let remainder = game.pot % winners.length;
+  // The wallet already deducted one fixed stake from every player at match start.
+  // Return that entire locked pool to the winner(s), so a 1:1 winner receives
+  // their own stake back plus the loser's stake.
+  const lockedPool = game.stake * Object.keys(game.players).length;
+  const share = Math.floor(lockedPool / winners.length);
+  let remainder = lockedPool % winners.length;
   for (const player of playerOrder(game)) {
     if (!winners.includes(player.id)) continue;
-    payouts[player.id] += share;
+    payouts[player.id] = share;
     if (remainder > 0) {
       payouts[player.id] += 1;
       remainder -= 1;

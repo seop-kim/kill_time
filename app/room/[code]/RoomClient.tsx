@@ -106,7 +106,7 @@ function formatAmount(value: number): string {
 const GAMES: GameTab[] = [
   { id: "omok", label: "Omok", available: true },
   { id: "girin", label: "girin", available: true },
-  { id: "seotda", label: "섯다", available: true },
+  { id: "seotda", label: "Up", available: true },
   { id: "baseball", label: "Baseball", available: false },
   { id: "janggi", label: "Janggi", available: false },
 ];
@@ -339,7 +339,7 @@ export default function RoomClient({ code }: { code: string }) {
   useEffect(() => {
     if (!room || !roomHostId) return;
     if (room.status === "playing" && prevStatusRef.current === "waiting") {
-      showToast(activeGameId === "seotda" ? "섯다 게임을 시작했습니다. 패가 배분되었습니다." : "대진이 성사되어 게임을 시작했습니다.", "info");
+      showToast(activeGameId === "seotda" ? "Up 게임을 시작했습니다. 패가 배분되었습니다." : "대진이 성사되어 게임을 시작했습니다.", "info");
     }
     if (room.status === "finished" && prevStatusRef.current !== "finished") {
       if (activeGameId === "seotda") {
@@ -347,10 +347,10 @@ export default function RoomClient({ code }: { code: string }) {
         const myId = identity?.role === "host" ? room.host.id ?? "host" : identity?.participantId;
         showToast(
           winnerIds.length > 1
-            ? "섯다 무승부입니다."
+            ? "Up 무승부입니다."
             : winnerIds.includes(myId ?? "")
-              ? "섯다에서 승리했습니다!"
-              : `${room.seotdaGame?.players[winnerIds[0]]?.name ?? "상대방"}님이 섯다에서 승리했습니다.`,
+              ? "Up에서 승리했습니다!"
+              : `${room.seotdaGame?.players[winnerIds[0]]?.name ?? "상대방"}님이 Up에서 승리했습니다.`,
           "info",
           { placement: "top-center", emphasis: true },
         );
@@ -739,7 +739,7 @@ export default function RoomClient({ code }: { code: string }) {
           result.reason === "not-found"
             ? "문서를 찾을 수 없습니다."
             : result.reason === "insufficient-funds"
-              ? "섯다 판돈보다 머니가 부족해 입장할 수 없습니다."
+              ? "Up 판돈보다 머니가 부족해 입장할 수 없습니다."
               : "이미 인원이 가득한 문서입니다.",
           "error",
         );
@@ -756,15 +756,15 @@ export default function RoomClient({ code }: { code: string }) {
     if (!room || !identity) return;
     if (activeGameId === "seotda") {
       if (identity.role !== "host") {
-        showToast("방장만 섯다 게임을 시작할 수 있습니다.", "info");
+        showToast("방장만 Up 게임을 시작할 수 있습니다.", "info");
         return;
       }
       if (room.status !== "waiting") {
-        showToast("대기 중인 방에서만 섯다를 시작할 수 있습니다.", "info");
+        showToast("대기 중인 방에서만 Up을 시작할 수 있습니다.", "info");
         return;
       }
       if (getMatchParticipants(room).length < 2) {
-        showToast("두 명 이상 참여해야 섯다를 시작할 수 있습니다.", "info");
+        showToast("두 명 이상 참여해야 Up을 시작할 수 있습니다.", "info");
         return;
       }
       setStartConfirmOpen(true);
@@ -817,15 +817,15 @@ export default function RoomClient({ code }: { code: string }) {
             const names = result.missing?.map((participant) => `${participant.name}(${formatAmount(participant.balance)}/${formatAmount(participant.required)})`).join(", ");
             showToast(`머니가 부족해 시작할 수 없습니다: ${names ?? "참여자 확인 필요"}`, "error");
           } else if (result.reason === "not-enough-players") {
-            showToast("두 명 이상 참여해야 섯다를 시작할 수 있습니다.", "info");
+            showToast("두 명 이상 참여해야 Up을 시작할 수 있습니다.", "info");
           } else {
-            showToast("섯다 게임을 시작할 수 없는 상태입니다.", "info");
+            showToast("Up 게임을 시작할 수 없는 상태입니다.", "info");
           }
           return;
         }
-        showToast("섯다 게임을 시작했습니다. 패가 배분되었습니다.", "info");
+        showToast("Up 게임을 시작했습니다. 패가 배분되었습니다.", "info");
       } catch (error) {
-        showToast(error instanceof Error ? error.message : "섯다 게임을 시작하지 못했습니다.", "error");
+      showToast(error instanceof Error ? error.message : "Up 게임을 시작하지 못했습니다.", "error");
       }
       return;
     }
@@ -978,7 +978,7 @@ export default function RoomClient({ code }: { code: string }) {
       await rematchSeotda(code);
       showToast("다시 대결할 수 있도록 대기 상태로 돌아갔습니다.", "info");
     } catch {
-      showToast("섯다 게임을 다시 시작하지 못했습니다.", "error");
+      showToast("Up 게임을 다시 시작하지 못했습니다.", "error");
     }
   }
 

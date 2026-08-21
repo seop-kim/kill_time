@@ -382,8 +382,8 @@ export function SeotdaHandRankTooltip() {
   ];
 
   return (
-    <div role="tooltip" aria-label="섯다 족보" className="w-[230px] rounded-sm border border-[#c8c8c8] bg-white p-2.5 text-[10px] text-[#333] shadow-md">
-      <div className="border-b border-[#ededed] pb-1.5 text-[12px] font-semibold text-[#1f4e79]">섯다 족보</div>
+    <div role="tooltip" aria-label="Up 족보" className="w-[230px] rounded-sm border border-[#c8c8c8] bg-white p-2.5 text-[10px] text-[#333] shadow-md">
+      <div className="border-b border-[#ededed] pb-1.5 text-[12px] font-semibold text-[#1f4e79]">Up 족보</div>
       <div className="mt-1.5 flex flex-col gap-1">
         {ranks.map(([name, description], index) => (
           <div key={name} className="flex items-center gap-2 whitespace-nowrap">
@@ -870,6 +870,7 @@ export function ExcelChrome({
   avatars,
   profileAvatar,
   profileStats,
+  profileGames,
   participants,
   statusLabel = "편집 중",
   onStatusClick,
@@ -910,6 +911,7 @@ export function ExcelChrome({
   avatars: ChromeAvatar[];
   profileAvatar?: ChromeAvatar;
   profileStats?: Record<string, GameStats>;
+  profileGames?: GameTab[];
   participants?: ParticipantGroups;
   statusLabel?: string;
   onStatusClick?: () => void;
@@ -1099,7 +1101,7 @@ export function ExcelChrome({
                   <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
                   <ProfileStatsDropdown
                     name={profile.name}
-                    games={games}
+                    games={profileGames ?? games}
                     stats={profileStats ?? {}}
                     onClose={() => setProfileOpen(false)}
                   />

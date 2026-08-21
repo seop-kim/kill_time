@@ -429,7 +429,7 @@ describe("ExcelChrome", () => {
     const markup = renderToStaticMarkup(<SeotdaHandRankTooltip />);
 
     expect(markup).toContain('role="tooltip"');
-    expect(markup).toContain("섯다 족보");
+    expect(markup).toContain("Up 족보");
     expect(markup).toContain("38광땡");
     expect(markup).toContain("10땡");
     expect(markup).toContain("알리");

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { WorkspaceChrome } from "./WorkspaceChrome";
 import type { WalletProfile } from "@/lib/wallet";
+import type { GameStats } from "@/lib/stats";
 
 const WORKSPACE_COLUMN_COUNT = 14;
 const WORKSPACE_ROW_COUNT = 28;
@@ -24,15 +25,17 @@ export function WorkspaceHome({
   onCreateDocument,
   onOpenJoin,
   onOpenExchange,
+  profileStats,
 }: {
   nickname: string;
   wallet: WalletProfile;
   onCreateDocument: () => void;
   onOpenJoin: () => void;
   onOpenExchange: () => void;
+  profileStats?: Record<string, GameStats>;
 }) {
   return (
-    <WorkspaceChrome nickname={nickname} onNavigateExchange={onOpenExchange}>
+    <WorkspaceChrome nickname={nickname} onNavigateExchange={onOpenExchange} profileStats={profileStats}>
       <div className="relative flex-1 min-h-0 overflow-hidden bg-white">
         <div className="absolute inset-0 overflow-auto bg-[#fff]">
           <div className="grid min-h-full grid-cols-[36px_repeat(14,100px)] auto-rows-[26px] text-[11px]">

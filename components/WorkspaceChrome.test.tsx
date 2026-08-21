@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { WorkspaceChrome } from "./WorkspaceChrome";
+import { WORKSPACE_PROFILE_GAMES, WorkspaceChrome } from "./WorkspaceChrome";
 
 describe("WorkspaceChrome", () => {
   it("keeps the document hub header and footer around page content", () => {
@@ -31,5 +31,10 @@ describe("WorkspaceChrome", () => {
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('data-work-cover="true"');
     expect(markup).not.toContain('data-page-content="true"');
+  });
+
+  it("uses the playable games for profile records instead of workspace sheets", () => {
+    expect(WORKSPACE_PROFILE_GAMES.map((game) => game.id)).toEqual(["omok", "girin", "seotda"]);
+    expect(WORKSPACE_PROFILE_GAMES.map((game) => game.label)).toEqual(["Omok", "girin", "Up"]);
   });
 });

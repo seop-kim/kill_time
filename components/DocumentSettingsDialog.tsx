@@ -59,7 +59,7 @@ export function DocumentSettingsDialog({
             >
               <option value="omok">오목</option>
               <option value="girin">내가 그린 기린 그림</option>
-              <option value="seotda">섯다</option>
+              <option value="seotda">Up</option>
             </select>
           </label>
 
@@ -67,7 +67,7 @@ export function DocumentSettingsDialog({
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-[#555]">판돈 (머니)</span>
               <input
-                aria-label="섯다 판돈"
+                aria-label="Up 판돈"
                 type="number"
                 min={SEOTDA_STAKE_MIN}
                 max={SEOTDA_STAKE_MAX}

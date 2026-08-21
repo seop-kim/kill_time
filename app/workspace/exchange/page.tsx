@@ -7,6 +7,8 @@ import { ensureWallet, exchangeCoinMoney, subscribeWallet, type WalletProfile } 
 import { ExchangeSheet, type ExchangeDirection } from "@/components/ExchangeSheet";
 import { WorkspaceChrome } from "@/components/WorkspaceChrome";
 import { useToast } from "@/components/Toast";
+import { ensureFirebaseAuth } from "@/lib/firebase";
+import { subscribeUserStats, type GameStats } from "@/lib/stats";
 
 export default function ExchangePage() {
   const router = useRouter();
@@ -14,6 +16,7 @@ export default function ExchangePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
   const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
+  const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
 
   useEffect(() => {
     const storedNickname = loadNickname();
@@ -29,6 +32,21 @@ export default function ExchangePage() {
     ensureWallet(id).catch(() => showToast("지갑을 불러오지 못했습니다.", "error"));
     return subscribeWallet(id, setWallet);
   }, [router, showToast]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    ensureFirebaseAuth()
+      .then(() => {
+        if (!disposed) unsubscribe = subscribeUserStats(userId, (profile) => setProfileStats(profile.games));
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [userId]);
 
   async function handleExchange(direction: ExchangeDirection, amount: number) {
     if (!userId) return;
@@ -46,6 +64,7 @@ export default function ExchangePage() {
       nickname={nickname}
       activeSheetId="exchange"
       onNavigateHome={() => router.push("/workspace")}
+      profileStats={profileStats}
     >
       <ExchangeSheet wallet={wallet} onExchange={handleExchange} />
     </WorkspaceChrome>

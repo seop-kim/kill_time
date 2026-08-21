@@ -41,7 +41,7 @@ export function buildSeotdaEscrow(
   normalizeSeotdaStake(stake);
   const ids = players.map((player) => player.id);
   if (ids.length < 2 || new Set(ids).size !== ids.length) {
-    throw new Error("섯다는 두 명 이상의 서로 다른 참여자가 필요합니다.");
+    throw new Error("Up은 두 명 이상의 서로 다른 참여자가 필요합니다.");
   }
   return Object.fromEntries(ids.map((id) => [id, stake]));
 }

@@ -10,6 +10,8 @@ import { useToast } from "@/components/Toast";
 import { DocumentJoinDialog } from "@/components/HomeAccess";
 import { WorkspaceHome } from "@/components/WorkspaceHome";
 import { DocumentSettingsDialog } from "@/components/DocumentSettingsDialog";
+import { ensureFirebaseAuth } from "@/lib/firebase";
+import { subscribeUserStats, type GameStats } from "@/lib/stats";
 
 export default function WorkspacePage() {
   const router = useRouter();
@@ -18,6 +20,7 @@ export default function WorkspacePage() {
   const [nickname, setNickname] = useState("");
   const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
   const [walletLoaded, setWalletLoaded] = useState(false);
+  const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
   const [joinOpen, setJoinOpen] = useState(false);
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,6 +49,21 @@ export default function WorkspacePage() {
   }, [router, showToast]);
 
   useEffect(() => {
+    if (!userId) return undefined;
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    ensureFirebaseAuth()
+      .then(() => {
+        if (!disposed) unsubscribe = subscribeUserStats(userId, (profile) => setProfileStats(profile.games));
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [userId]);
+
+  useEffect(() => {
     if (!userId) return;
     claimDailyAttendance(userId)
       .then((claimed) => {
@@ -65,11 +83,11 @@ export default function WorkspacePage() {
       }
       try {
         if (!canAffordSeotdaStake(wallet.money, createMoneyStake)) {
-          showToast("섯다 판돈보다 머니가 부족합니다.", "error");
+          showToast("Up 판돈보다 머니가 부족합니다.", "error");
           return;
         }
       } catch (error) {
-        showToast(error instanceof Error ? error.message : "섯다 판돈을 확인하지 못했습니다.", "error");
+        showToast(error instanceof Error ? error.message : "Up 판돈을 확인하지 못했습니다.", "error");
         return;
       }
     }
@@ -106,7 +124,7 @@ export default function WorkspacePage() {
           return;
         }
         if (result.reason === "insufficient-funds") {
-          showToast("섯다 판돈보다 머니가 부족합니다.", "error");
+          showToast("Up 판돈보다 머니가 부족합니다.", "error");
           return;
         }
         showToast("이미 인원이 가득한 문서입니다.", "error");
@@ -132,6 +150,7 @@ export default function WorkspacePage() {
         onCreateDocument={() => setCreateOpen(true)}
         onOpenJoin={() => setJoinOpen(true)}
         onOpenExchange={() => router.push("/workspace/exchange")}
+        profileStats={profileStats}
       />
       <DocumentJoinDialog
         open={joinOpen}

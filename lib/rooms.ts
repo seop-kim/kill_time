@@ -375,7 +375,7 @@ export async function startSeotdaGame(code: string, now = Date.now()): Promise<S
   try {
     for (const participant of getSeotdaParticipants(room)) {
       if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, stake, now))) {
-        throw new Error("섯다 판돈을 잠그지 못했습니다.");
+        throw new Error("Up 판돈을 잠그지 못했습니다.");
       }
       lockedUserIds.push(participant.userId);
     }
@@ -387,7 +387,7 @@ export async function startSeotdaGame(code: string, now = Date.now()): Promise<S
       currentRoom.gameStartedAt = now;
       return currentRoom;
     });
-    if (!transaction.committed) throw new Error("섯다 게임 시작 상태를 저장하지 못했습니다.");
+    if (!transaction.committed) throw new Error("Up 게임 시작 상태를 저장하지 못했습니다.");
     return { ok: true, matchId: game.matchId };
   } catch (error) {
     await Promise.all(lockedUserIds.map((userId) => settleSeotdaMatch(userId, game.matchId, stake, now).catch(() => false)));
@@ -415,10 +415,10 @@ export async function applySeotdaActionToRoom(
     return room;
   });
 
-  if (!transaction.committed || !transaction.snapshot.exists()) throw new Error("섯다 베팅을 저장하지 못했습니다.");
+  if (!transaction.committed || !transaction.snapshot.exists()) throw new Error("Up 베팅을 저장하지 못했습니다.");
   const nextRoom = transaction.snapshot.val() as Room;
   const nextGame = nextRoom.seotdaGame;
-  if (!nextGame) throw new Error("섯다 게임 상태를 찾을 수 없습니다.");
+  if (!nextGame) throw new Error("Up 게임 상태를 찾을 수 없습니다.");
 
   if (finishedGame) {
     const payouts = getSeotdaPayouts(nextGame);
@@ -556,7 +556,7 @@ export async function createRoom(
   userId?: string,
 ): Promise<string> {
   if (gameId === "seotda" && !canAffordSeotdaStake(walletMoney, moneyStake)) {
-    throw new Error("섯다 판돈보다 머니가 부족합니다.");
+    throw new Error("Up 판돈보다 머니가 부족합니다.");
   }
   let code = generateRoomCode();
   for (let attempt = 0; attempt < 5; attempt++) {
