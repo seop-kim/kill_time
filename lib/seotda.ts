@@ -118,8 +118,8 @@ function nextActivePlayerId(game: SeotdaGame, fromId: string): string | null {
   return null;
 }
 
-function firstActivePlayerId(game: SeotdaGame): string | null {
-  return activePlayers(game)[0]?.id ?? null;
+function firstBettingPlayerId(game: SeotdaGame): string | null {
+  return activePlayers(game).find((player) => player.stack > 0)?.id ?? null;
 }
 
 function isRoundComplete(game: SeotdaGame): boolean {
@@ -146,7 +146,13 @@ function finishBettingRound(game: SeotdaGame, now: number): void {
     game.round = 2;
     game.currentBet = 0;
     for (const player of Object.values(game.players)) player.acted = player.folded || player.stack === 0;
-    game.currentPlayerId = firstActivePlayerId(game);
+    const nextPlayerId = firstBettingPlayerId(game);
+    if (!nextPlayerId) {
+      game.status = "showdown";
+      game.currentPlayerId = null;
+      return;
+    }
+    game.currentPlayerId = nextPlayerId;
     game.turnStartedAt = now;
     return;
   }

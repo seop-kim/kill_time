@@ -59,6 +59,17 @@ describe("Seotda game transitions", () => {
     expect(getLegalSeotdaActions(next, "p2")).toContain("bet");
   });
 
+  it("keeps the first player's actions available when the turn comes back", () => {
+    const game = createSeotdaGame(100, players, 100, () => 0.1);
+    const afterFirstCheck = applySeotdaAction(game, "p1", "check", 101);
+    const afterOpponentBet = applySeotdaAction(afterFirstCheck, "p2", "bet", 102);
+
+    expect(afterOpponentBet.currentPlayerId).toBe("p1");
+    expect(getLegalSeotdaActions(afterOpponentBet, "p1")).toEqual(
+      expect.arrayContaining(["call", "fold"]),
+    );
+  });
+
   it("scales quarter and half bets from the stake and growing pot", () => {
     const game = createSeotdaGame(100, players, 100, () => 0.1);
     const afterQuarter = applySeotdaAction(game, "p1", "quarter", 101);
@@ -94,6 +105,23 @@ describe("Seotda game transitions", () => {
     expect(afterRound.players.p1.hand).toHaveLength(2);
     expect(afterRound.players.p2.hand).toHaveLength(2);
     expect(afterRound.currentPlayerId).toBe("p1");
+  });
+
+  it("skips an all-in player when selecting the next round turn", () => {
+    const baseGame = createSeotdaGame(100, players, 100, () => 0.1);
+    const game = {
+      ...baseGame,
+      players: {
+        ...baseGame.players,
+        p2: { ...baseGame.players.p2, stack: 200 },
+      },
+    };
+    const afterAllIn = applySeotdaAction(game, "p1", "all-in", 101);
+    const afterCall = applySeotdaAction(afterAllIn, "p2", "call", 102);
+
+    expect(afterCall.round).toBe(2);
+    expect(afterCall.currentPlayerId).toBe("p2");
+    expect(getLegalSeotdaActions(afterCall, "p2")).toContain("check");
   });
 
   it("moves a fold to showdown and gives the winner the loser's locked stake", () => {

@@ -42,7 +42,7 @@ describe("SeotdaGamePanel", () => {
     expect(markup).toContain('data-seotda-field="own-rank"');
     expect(markup).toContain('data-seotda-field="player-name-p1"');
     expect(markup).toContain('data-seotda-field="player-money-p1"');
-    expect(markup).toContain('data-seotda-field="player-stack-p1"');
+    expect(markup).toContain('data-seotda-field="player-remaining-p1"');
     expect(markup).toContain('data-seotda-field="player-bet-p1"');
     expect(markup).toContain('data-seotda-field="player-profile-card-p1"');
     expect(markup).toMatch(/data-seotda-field="player-profile-card-p1"[^>]*col-span-3[^>]*row-span-5/);
@@ -79,6 +79,28 @@ describe("SeotdaGamePanel", () => {
     expect(markup).toContain("하나 · 쿼터 +25");
     expect(markup).toContain("현재 팟");
     expect(markup).toContain(">25</strong>");
+  });
+
+  it("enables the required response when the turn returns after an opponent bet", () => {
+    const game = createSeotdaGame(
+      100,
+      [
+        { id: "p1", name: "하나", seat: 0 },
+        { id: "p2", name: "둘", seat: 1 },
+      ],
+      100,
+      () => 0.1,
+    );
+    const afterFirstCheck = applySeotdaAction(game, "p1", "check", 101);
+    const afterOpponentBet = applySeotdaAction(afterFirstCheck, "p2", "bet", 102);
+    const markup = renderToStaticMarkup(
+      <SeotdaGamePanel game={afterOpponentBet} playerId="p1" onAction={() => {}} />,
+    );
+
+    expect(markup).toContain("내 차례입니다.");
+    expect(markup).toContain('data-seotda-field="action-help"');
+    expect(markup).toContain("콜 금액 10");
+    expect(markup).toMatch(/data-seotda-field="action-call"[^>]*><button type="button"(?! disabled)/);
   });
 
   it("renders a waiting message when no Seotda game has started", () => {

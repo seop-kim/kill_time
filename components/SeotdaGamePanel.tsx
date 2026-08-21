@@ -60,6 +60,15 @@ export function SeotdaGamePanel({
   const lastActionText = lastAction
     ? `${lastActionName} · ${ACTION_LABELS[lastAction.action]}${lastAction.amount > 0 ? ` +${formatAmount(lastAction.amount)}` : ""}`
     : "아직 액션 없음";
+  const toCall = game && player ? Math.max(0, game.currentBet - player.committed) : 0;
+  const legalActionText = legalActions.map((action) => ACTION_LABELS[action]).join(" · ");
+  const actionHelp = !game
+    ? "게임 시작 후 선택할 수 있습니다."
+    : !isMyTurn
+      ? "상대방의 선택을 기다리는 중입니다."
+      : toCall > 0
+        ? `콜 금액 ${formatAmount(toCall)} · ${legalActionText}`
+        : `선택 가능 · ${legalActionText}`;
 
   const participantCard = (participant: typeof players[number]) => {
     const isSelf = participant.id === playerId;
@@ -78,8 +87,8 @@ export function SeotdaGamePanel({
         </div>
         <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">머니</div>
         <div data-seotda-field={`player-money-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold text-[#333]"><span className="block truncate">{participantMoney[participant.id] == null ? "-" : formatAmount(participantMoney[participant.id])}</span></div>
-        <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">스택</div>
-        <div data-seotda-field={`player-stack-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold text-[#333]"><span className="block truncate">{formatAmount(participant.stack)}</span></div>
+        <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">남은 금액</div>
+        <div data-seotda-field={`player-remaining-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold text-[#333]"><span className="block truncate">{participantMoney[participant.id] == null ? "-" : formatAmount(participantMoney[participant.id])}</span></div>
         <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">베팅</div>
         <div data-seotda-field={`player-bet-${participant.id}`} className="col-span-2 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-1 py-1 font-semibold text-[#333]"><span className="block truncate">{formatAmount(participant.committed)}</span></div>
         <div className="min-w-0 overflow-hidden border border-[#e8edf3] bg-[#f8f8f8] px-1 py-1 text-[10px] text-[#789]">패</div>
@@ -137,7 +146,7 @@ export function SeotdaGamePanel({
             <span key={`own-card-${index}`} className="mr-1 inline-block rounded-sm border border-[#b7c9e2] bg-[#f3f8fc] px-1 font-semibold text-[#1f4e79]">{`${card.value}${card.isGwang ? "광" : "월"}`}</span>
           )) : <span>-</span>}
         </div>
-        <div data-seotda-field="own-stack" className="col-span-3 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">내 스택 <strong className="text-[#333]">{formatAmount(player?.stack ?? 0)}</strong></div>
+        <div data-seotda-field="own-stack" className="col-span-3 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">내 남은 금액 <strong className="text-[#333]">{participantMoney[playerId] == null ? "-" : formatAmount(participantMoney[playerId])}</strong></div>
         <div data-seotda-field="own-bet" className="col-span-3 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">내 베팅 <strong className="text-[#333]">{formatAmount(player?.committed ?? 0)}</strong></div>
         <div data-seotda-field="own-rank" className="col-span-3 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">족보 <strong className="text-[#1f4e79]">{ownRank?.label ?? "-"}</strong></div>
 
@@ -165,7 +174,10 @@ export function SeotdaGamePanel({
             </button>
           </div>
         ))}
-        <div data-seotda-field="turn-message" className="col-span-4 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[#777]">{isMyTurn ? "내 차례입니다." : "상대방 차례입니다."}</div>
+        <div data-seotda-field="turn-message" className="col-span-4 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-2 py-0.5 whitespace-nowrap text-[#777]">
+          <div>{isMyTurn ? "내 차례입니다." : "상대방 차례입니다."}</div>
+          <div data-seotda-field="action-help" className="truncate text-[9px] text-[#217346]">{actionHelp}</div>
+        </div>
 
         <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">15</div>
         {game?.status === "finished" ? (
