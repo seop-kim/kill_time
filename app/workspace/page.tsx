@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH, type RoomGameId } from "@/lib/rooms";
-import { SEOTDA_STAKE_MIN } from "@/lib/economy";
+import { canAffordSeotdaStake, SEOTDA_STAKE_MIN } from "@/lib/economy";
 import { getOrCreateUserId, loadNickname, saveIdentity } from "@/lib/identity";
-import { ensureWallet, getKstDateKey, claimDailyAttendance, subscribeAttendance, subscribeWallet, type WalletProfile } from "@/lib/wallet";
-import { saveProfileNickname } from "@/lib/profile";
+import { claimDailyAttendance, ensureWallet, subscribeWallet, type WalletProfile } from "@/lib/wallet";
 import { useToast } from "@/components/Toast";
 import { DocumentJoinDialog } from "@/components/HomeAccess";
 import { WorkspaceHome } from "@/components/WorkspaceHome";
@@ -18,11 +17,10 @@ export default function WorkspacePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
   const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
-  const [attendanceClaimed, setAttendanceClaimed] = useState(false);
+  const [walletLoaded, setWalletLoaded] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [roomCode, setRoomCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createGameId, setCreateGameId] = useState<RoomGameId>("omok");
   const [createMoneyStake, setCreateMoneyStake] = useState(SEOTDA_STAKE_MIN);
@@ -38,27 +36,51 @@ export default function WorkspacePage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUserId(id);
     setNickname(storedName);
-    Promise.all([saveProfileNickname(id, storedName), ensureWallet(id)]).catch(() => {
-      showToast("사용자 정보를 불러오지 못했습니다.", "error");
+    ensureWallet(id).catch(() => {
+      showToast("지갑 정보를 불러오지 못했습니다.", "error");
     });
-    return subscribeWallet(id, setWallet);
+    return subscribeWallet(id, (nextWallet) => {
+      setWallet(nextWallet);
+      setWalletLoaded(true);
+    });
   }, [router, showToast]);
 
   useEffect(() => {
     if (!userId) return;
-    return subscribeAttendance(userId, getKstDateKey(), setAttendanceClaimed);
-  }, [userId]);
+    claimDailyAttendance(userId)
+      .then((claimed) => {
+        if (claimed) showToast("오늘 출석체크 완료! 500 coin을 받았습니다.", "info");
+      })
+      .catch(() => {
+        showToast("자동 출석체크를 처리하지 못했습니다.", "error");
+      });
+  }, [userId, showToast]);
 
   async function handleCreateDocument() {
     if (!userId || busy) return;
+    if (createGameId === "seotda") {
+      if (!walletLoaded) {
+        showToast("머니 정보를 확인하는 중입니다. 잠시 후 다시 시도해 주세요.", "info");
+        return;
+      }
+      try {
+        if (!canAffordSeotdaStake(wallet.money, createMoneyStake)) {
+          showToast("섯다 판돈보다 머니가 부족합니다.", "error");
+          return;
+        }
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "섯다 판돈을 확인하지 못했습니다.", "error");
+        return;
+      }
+    }
     setBusy(true);
     try {
-      const code = await createRoom(nickname, createGameId, createMoneyStake);
+      const code = await createRoom(nickname, createGameId, createMoneyStake, wallet.money, userId);
       saveIdentity(code, { role: "host", name: nickname, userId });
       setCreateOpen(false);
       router.push(`/room/${code}`);
-    } catch {
-      showToast("문서를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "문서를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
     } finally {
       setBusy(false);
     }
@@ -66,6 +88,10 @@ export default function WorkspacePage() {
 
   async function handleJoinDocument() {
     if (!userId || busy) return;
+    if (!walletLoaded) {
+      showToast("머니 정보를 확인하는 중입니다. 잠시 후 다시 시도해 주세요.", "info");
+      return;
+    }
     const code = normalizeRoomCode(roomCode);
     if (code.length !== ROOM_CODE_LENGTH) {
       showToast(`문서 코드는 ${ROOM_CODE_LENGTH}자입니다.`, "error");
@@ -73,10 +99,14 @@ export default function WorkspacePage() {
     }
     setBusy(true);
     try {
-      const result = await joinRoom(code, nickname);
+      const result = await joinRoom(code, nickname, wallet.money, userId);
       if (!result.ok) {
         if (result.reason === "not-found") {
           router.push(`/room/${code}`);
+          return;
+        }
+        if (result.reason === "insufficient-funds") {
+          showToast("섯다 판돈보다 머니가 부족합니다.", "error");
           return;
         }
         showToast("이미 인원이 가득한 문서입니다.", "error");
@@ -92,19 +122,6 @@ export default function WorkspacePage() {
     }
   }
 
-  async function handleAttendance() {
-    if (!userId || attendanceClaimed || attendanceBusy) return;
-    setAttendanceBusy(true);
-    try {
-      const claimed = await claimDailyAttendance(userId);
-      showToast(claimed ? "출석체크 완료! 500 coin을 받았습니다." : "오늘은 이미 출석체크했습니다.", claimed ? "info" : "error");
-    } catch {
-      showToast("출석체크를 처리하지 못했습니다.", "error");
-    } finally {
-      setAttendanceBusy(false);
-    }
-  }
-
   if (!userId || !nickname) return <div className="flex-1" />;
 
   return (
@@ -112,12 +129,9 @@ export default function WorkspacePage() {
       <WorkspaceHome
         nickname={nickname}
         wallet={wallet}
-        attendanceClaimed={attendanceClaimed}
-        attendanceBusy={attendanceBusy}
         onCreateDocument={() => setCreateOpen(true)}
         onOpenJoin={() => setJoinOpen(true)}
         onOpenExchange={() => router.push("/workspace/exchange")}
-        onClaimAttendance={handleAttendance}
       />
       <DocumentJoinDialog
         open={joinOpen}

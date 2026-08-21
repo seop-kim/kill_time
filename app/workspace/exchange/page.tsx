@@ -5,17 +5,19 @@ import { useRouter } from "next/navigation";
 import { getOrCreateUserId, loadNickname } from "@/lib/identity";
 import { ensureWallet, exchangeCoinMoney, subscribeWallet, type WalletProfile } from "@/lib/wallet";
 import { ExchangeSheet, type ExchangeDirection } from "@/components/ExchangeSheet";
+import { WorkspaceChrome } from "@/components/WorkspaceChrome";
 import { useToast } from "@/components/Toast";
 
 export default function ExchangePage() {
   const router = useRouter();
   const showToast = useToast();
   const [userId, setUserId] = useState<string | null>(null);
+  const [nickname, setNickname] = useState("");
   const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
 
   useEffect(() => {
-    const nickname = loadNickname();
-    if (!nickname) {
+    const storedNickname = loadNickname();
+    if (!storedNickname) {
       router.replace("/");
       return;
     }
@@ -23,6 +25,7 @@ export default function ExchangePage() {
     // The identity is browser-only; initialize it after hydration.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUserId(id);
+    setNickname(storedNickname);
     ensureWallet(id).catch(() => showToast("지갑을 불러오지 못했습니다.", "error"));
     return subscribeWallet(id, setWallet);
   }, [router, showToast]);
@@ -37,6 +40,14 @@ export default function ExchangePage() {
     }
   }
 
-  if (!userId) return <div className="flex-1" />;
-  return <ExchangeSheet wallet={wallet} onExchange={handleExchange} onBack={() => router.push("/workspace")} />;
+  if (!userId || !nickname) return <div className="flex-1" />;
+  return (
+    <WorkspaceChrome
+      nickname={nickname}
+      activeSheetId="exchange"
+      onNavigateHome={() => router.push("/workspace")}
+    >
+      <ExchangeSheet wallet={wallet} onExchange={handleExchange} />
+    </WorkspaceChrome>
+  );
 }

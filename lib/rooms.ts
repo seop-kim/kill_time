@@ -1,8 +1,18 @@
 import { get, onDisconnect, onValue, push, ref, runTransaction, set, update } from "firebase/database";
 import { getDb } from "./firebase";
-import { normalizeSeotdaStake, SEOTDA_STAKE_MIN } from "./economy";
+import { canAffordSeotdaStake, normalizeSeotdaStake, SEOTDA_STAKE_MIN } from "./economy";
 import { cellKey, type Board, type Stone } from "./gomoku";
 import { finishGirinGameIfSolo, type GirinGame } from "./girin";
+import {
+  applySeotdaAction,
+  createSeotdaGame,
+  getSeotdaPayouts,
+  getSeotdaWinners,
+  SEOTDA_MAX_PLAYERS,
+  type SeotdaActionType,
+  type SeotdaGame,
+} from "./seotda";
+import { getWallet, lockSeotdaStake, settleSeotdaMatch } from "./wallet";
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
@@ -10,11 +20,19 @@ export type RoomGameId = "omok" | "girin" | "seotda";
 
 export interface Player {
   id?: string;
+  userId?: string;
   name: string;
+}
+
+export const ROOM_HOME_PATH = "/workspace";
+
+export function getRoomHostId(room: { host?: Player } | null | undefined): string | undefined {
+  return room?.host ? room.host.id ?? "host" : undefined;
 }
 
 export interface Spectator {
   id: string;
+  userId?: string;
   name: string;
 }
 
@@ -22,6 +40,7 @@ export interface MatchParticipant {
   id: string;
   name: string;
   role: ParticipantRole;
+  userId?: string;
 }
 
 export interface ChatMessage {
@@ -77,6 +96,7 @@ export interface Room {
   kickedParticipants?: Record<string, { name: string; kickedAt: number }>;
   /** Reserved for money-stake games such as Seotda. */
   moneyStake?: number;
+  seotdaGame?: SeotdaGame;
   girinGame?: GirinGame;
   undoRequest?: PlayerRole | null;
   drawRequest?: PlayerRole | null;
@@ -101,6 +121,14 @@ export function normalizeRoomGameId(value: unknown): RoomGameId {
   return "omok";
 }
 
+export function canEnterRoomWithWallet(
+  room: Pick<Room, "gameId" | "moneyStake">,
+  money: number,
+): boolean {
+  if (room.gameId !== "seotda") return true;
+  return canAffordSeotdaStake(money, room.moneyStake ?? SEOTDA_STAKE_MIN);
+}
+
 export function applyRoomGameSelection(room: Room, gameId: RoomGameId): Room {
   return { ...room, gameId };
 }
@@ -118,6 +146,20 @@ export function applyRoomGameSettings(
 
   const nextRoom = { ...room, gameId };
   delete nextRoom.moneyStake;
+  return nextRoom;
+}
+
+export function resetSeotdaGame(room: Room): Room {
+  if (room.gameId !== "seotda") return room;
+  const nextRoom: Room = {
+    ...room,
+    status: "waiting",
+    winner: null,
+    lastMove: null,
+    turnStartedAt: Date.now(),
+  };
+  delete nextRoom.seotdaGame;
+  delete nextRoom.gameStartedAt;
   return nextRoom;
 }
 
@@ -156,10 +198,24 @@ export function getGameCandidates(room: Room): GameCandidate[] {
 }
 
 export function getMatchParticipants(room: Room): MatchParticipant[] {
-  const participants: MatchParticipant[] = [{ id: room.host.id ?? "host", name: room.host.name, role: "host" }];
-  if (room.guest) participants.push({ id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" });
+  const participants: MatchParticipant[] = [
+    {
+      id: room.host.id ?? "host",
+      name: room.host.name,
+      role: "host",
+      ...(room.host.userId ? { userId: room.host.userId } : {}),
+    },
+  ];
+  if (room.guest) {
+    participants.push({
+      id: room.guest.id ?? "guest",
+      name: room.guest.name,
+      role: "guest",
+      ...(room.guest.userId ? { userId: room.guest.userId } : {}),
+    });
+  }
   for (const [id, spectator] of Object.entries(room.spectators ?? {})) {
-    participants.push({ id, name: spectator.name, role: "spectator" });
+    participants.push({ id, name: spectator.name, role: "spectator", ...(spectator.userId ? { userId: spectator.userId } : {}) });
   }
 
   return participants.filter((participant) => {
@@ -248,6 +304,133 @@ export function removeParticipantFromRoom(
   return nextRoom;
 }
 
+export function getSeotdaParticipants(room: Room): MatchParticipant[] {
+  return getMatchParticipants(room).slice(0, SEOTDA_MAX_PLAYERS);
+}
+
+export function isRoomFull(room: Room): boolean {
+  return room.gameId === "seotda" && getMatchParticipants(room).length >= SEOTDA_MAX_PLAYERS;
+}
+
+export type SeotdaStartValidation =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "not-seotda" | "already-started" | "not-enough-players" | "too-many-players" | "insufficient-funds";
+      missing?: Array<{ id: string; name: string; balance: number; required: number }>;
+    };
+
+export function validateSeotdaStart(room: Room, balances: Record<string, number>): SeotdaStartValidation {
+  if (room.gameId !== "seotda") return { ok: false, reason: "not-seotda" };
+  if (room.status !== "waiting" || room.seotdaGame) return { ok: false, reason: "already-started" };
+  const participants = getMatchParticipants(room);
+  if (participants.length < 2) return { ok: false, reason: "not-enough-players" };
+  if (participants.length > SEOTDA_MAX_PLAYERS) return { ok: false, reason: "too-many-players" };
+
+  const required = normalizeSeotdaStake(room.moneyStake ?? SEOTDA_STAKE_MIN);
+  const missing = participants
+    .map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      balance: participant.userId ? Math.max(0, Math.floor(balances[participant.userId] ?? 0)) : 0,
+      required,
+    }))
+    .filter((participant) => participant.balance < required);
+  if (missing.length > 0) return { ok: false, reason: "insufficient-funds", missing };
+  return { ok: true };
+}
+
+export type SeotdaStartResult =
+  | { ok: true; matchId: string }
+  | (SeotdaStartValidation & { ok: false });
+
+export async function startSeotdaGame(code: string, now = Date.now()): Promise<SeotdaStartResult> {
+  const snapshot = await get(roomRef(code));
+  if (!snapshot.exists()) return { ok: false, reason: "already-started" };
+  const room = snapshot.val() as Room;
+  const participants = getMatchParticipants(room);
+  const balances: Record<string, number> = {};
+  await Promise.all(
+    participants.map(async (participant) => {
+      if (!participant.userId) return;
+      balances[participant.userId] = (await getWallet(participant.userId)).money;
+    }),
+  );
+
+  const validation = validateSeotdaStart(room, balances);
+  if (!validation.ok) return validation;
+
+  const stake = normalizeSeotdaStake(room.moneyStake ?? SEOTDA_STAKE_MIN);
+  const game = createSeotdaGame(
+    stake,
+    getSeotdaParticipants(room).map((participant, seat) => ({
+      id: participant.id,
+      name: participant.name,
+      seat,
+      userId: participant.userId,
+    })),
+    now,
+  );
+  const lockedUserIds: string[] = [];
+  try {
+    for (const participant of getSeotdaParticipants(room)) {
+      if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, stake, now))) {
+        throw new Error("섯다 판돈을 잠그지 못했습니다.");
+      }
+      lockedUserIds.push(participant.userId);
+    }
+
+    const transaction = await runTransaction(roomRef(code), (currentRoom: Room | null) => {
+      if (!currentRoom || currentRoom.gameId !== "seotda" || currentRoom.status !== "waiting" || currentRoom.seotdaGame) return currentRoom;
+      currentRoom.seotdaGame = game;
+      currentRoom.status = "playing";
+      currentRoom.gameStartedAt = now;
+      return currentRoom;
+    });
+    if (!transaction.committed) throw new Error("섯다 게임 시작 상태를 저장하지 못했습니다.");
+    return { ok: true, matchId: game.matchId };
+  } catch (error) {
+    await Promise.all(lockedUserIds.map((userId) => settleSeotdaMatch(userId, game.matchId, stake, now).catch(() => false)));
+    throw error;
+  }
+}
+
+export async function applySeotdaActionToRoom(
+  code: string,
+  playerId: string,
+  action: SeotdaActionType,
+  now = Date.now(),
+): Promise<SeotdaGame> {
+  let finishedGame: SeotdaGame | null = null;
+  const transaction = await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room || room.gameId !== "seotda" || room.status !== "playing" || !room.seotdaGame) return room;
+    const nextGame = applySeotdaAction(room.seotdaGame, playerId, action, now);
+    if (nextGame.status === "showdown") {
+      nextGame.winnerIds = getSeotdaWinners(nextGame);
+      nextGame.status = "finished";
+      room.status = "finished";
+      finishedGame = nextGame;
+    }
+    room.seotdaGame = nextGame;
+    return room;
+  });
+
+  if (!transaction.committed || !transaction.snapshot.exists()) throw new Error("섯다 베팅을 저장하지 못했습니다.");
+  const nextRoom = transaction.snapshot.val() as Room;
+  const nextGame = nextRoom.seotdaGame;
+  if (!nextGame) throw new Error("섯다 게임 상태를 찾을 수 없습니다.");
+
+  if (finishedGame) {
+    const payouts = getSeotdaPayouts(nextGame);
+    await Promise.all(
+      Object.values(nextGame.players).map((player) =>
+        player.userId ? settleSeotdaMatch(player.userId, nextGame.matchId, payouts[player.id] ?? 0, now) : Promise.resolve(false),
+      ),
+    );
+  }
+  return nextGame;
+}
+
 /**
  * Removes a participant at the host's request. Kicking is deliberately only
  * available while waiting: once a match starts, leaving is handled by the
@@ -289,19 +472,19 @@ export function transferOfflineHost(room: Room): Room {
   if (room.presence?.host !== false) return room;
 
   const onlineGuest = room.guest && room.presence?.guest !== false
-    ? { id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" as const }
+    ? { id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" as const, userId: room.guest.userId }
     : null;
   const onlineObserver = Object.entries(room.spectators ?? {})
     .find(([id]) => room.presence?.spectators?.[id] !== false);
   const candidate = onlineGuest ?? (onlineObserver
-    ? { id: onlineObserver[0], name: onlineObserver[1].name, role: "spectator" as const }
+    ? { id: onlineObserver[0], name: onlineObserver[1].name, role: "spectator" as const, userId: onlineObserver[1].userId }
     : null);
 
   if (!candidate) return room;
 
   const nextRoom: Room = {
     ...room,
-    host: { id: candidate.id, name: candidate.name },
+    host: { id: candidate.id, name: candidate.name, ...(candidate.userId ? { userId: candidate.userId } : {}) },
     presence: { ...(room.presence ?? {}), host: true },
   };
   if (room.spectators) nextRoom.spectators = { ...room.spectators };
@@ -349,6 +532,13 @@ export async function setRoomSettings(
   });
 }
 
+export async function rematchSeotda(code: string): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => {
+    if (!room || room.gameId !== "seotda" || room.status !== "finished") return room;
+    return resetSeotdaGame(room);
+  });
+}
+
 export function finishSoloGirinInRoom(room: Room, now = Date.now()): Room {
   if (!room.girinGame) return room;
 
@@ -362,7 +552,12 @@ export async function createRoom(
   hostName: string,
   gameId: RoomGameId = "omok",
   moneyStake = SEOTDA_STAKE_MIN,
+  walletMoney = 0,
+  userId?: string,
 ): Promise<string> {
+  if (gameId === "seotda" && !canAffordSeotdaStake(walletMoney, moneyStake)) {
+    throw new Error("섯다 판돈보다 머니가 부족합니다.");
+  }
   let code = generateRoomCode();
   for (let attempt = 0; attempt < 5; attempt++) {
     const snap = await get(roomRef(code));
@@ -372,7 +567,7 @@ export async function createRoom(
 
   const room: Room = {
     gameId,
-    host: { name: hostName },
+    host: { id: "host", name: hostName, ...(userId ? { userId } : {}) },
     guest: null,
     blackPlayer: "host",
     turn: "black",
@@ -391,26 +586,36 @@ export async function createRoom(
 export type JoinResult =
   | { ok: true; role: "guest"; participantId: string }
   | { ok: true; role: "spectator"; participantId: string }
-  | { ok: false; reason: "not-found" | "full" };
+  | { ok: false; reason: "not-found" | "full" | "insufficient-funds" };
 
-export async function joinRoom(code: string, guestName: string): Promise<JoinResult> {
+export async function joinRoom(code: string, guestName: string, walletMoney = 0, userId?: string): Promise<JoinResult> {
   const participantId = generateParticipantId();
   let result: JoinResult | null = null;
   const transaction = await runTransaction(roomRef(code), (currentRoom: Room | null) => {
     if (!currentRoom) return currentRoom;
 
+    if (!canEnterRoomWithWallet(currentRoom, walletMoney)) {
+      result = { ok: false, reason: "insufficient-funds" };
+      return currentRoom;
+    }
+    if (isRoomFull(currentRoom)) {
+      result = { ok: false, reason: "full" };
+      return currentRoom;
+    }
+
     if (!currentRoom.guest) {
-      currentRoom.guest = { id: participantId, name: guestName };
+      currentRoom.guest = { id: participantId, name: guestName, ...(userId ? { userId } : {}) };
       currentRoom.status = "waiting";
       result = { ok: true, role: "guest", participantId };
     } else {
       currentRoom.spectators = currentRoom.spectators ?? {};
-      currentRoom.spectators[participantId] = { id: participantId, name: guestName };
+      currentRoom.spectators[participantId] = { id: participantId, name: guestName, ...(userId ? { userId } : {}) };
       result = { ok: true, role: "spectator", participantId };
     }
     return currentRoom;
   });
 
+  if (result && "reason" in result) return result;
   if (!transaction.committed || !result) return { ok: false, reason: "not-found" };
   return result;
 }
@@ -439,9 +644,9 @@ export async function startGame(code: string, candidateId: string): Promise<void
       const spectators = room.spectators ?? {};
       if (room.guest) {
         const previousGuestId = room.guest.id ?? "guest";
-        spectators[previousGuestId] = { id: previousGuestId, name: room.guest.name };
+        spectators[previousGuestId] = { id: previousGuestId, name: room.guest.name, ...(room.guest.userId ? { userId: room.guest.userId } : {}) };
       }
-      room.guest = { id: selected.id, name: selected.name };
+      room.guest = { id: selected.id, name: selected.name, ...(selected.userId ? { userId: selected.userId } : {}) };
       delete spectators[candidate.id];
       room.spectators = spectators;
     }

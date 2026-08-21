@@ -4,19 +4,105 @@ import {
   DISCONNECT_GRACE_MS,
   PARTICIPANT_REMOVAL_GRACE_MS,
   applyMatchParticipation,
+  getSeotdaParticipants,
+  isRoomFull,
   getMatchParticipants,
   getGameCandidates,
   normalizeRoomGameId,
   applyRoomGameSelection,
   applyRoomGameSettings,
+  resetSeotdaGame,
+  validateSeotdaStart,
   clearRoomIfEmpty,
   finishSoloGirinInRoom,
   buildChatLogUpdates,
+  canEnterRoomWithWallet,
+  getRoomHostId,
   removeParticipantFromRoom,
   kickParticipantFromRoom,
+  ROOM_HOME_PATH,
   transferOfflineHost,
   type Room,
 } from "./rooms";
+
+describe("room exit safety", () => {
+  it("handles a transient room snapshot without a host and exits to the workspace", () => {
+    expect(getRoomHostId(undefined)).toBeUndefined();
+    expect(getRoomHostId({})).toBeUndefined();
+    expect(getRoomHostId({ host: { name: "방장" } })).toBe("host");
+    expect(ROOM_HOME_PATH).toBe("/workspace");
+  });
+});
+
+describe("Seotda room entry", () => {
+  it("blocks entry when the wallet cannot cover the room stake", () => {
+    expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 9_999)).toBe(false);
+    expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 10_000)).toBe(true);
+    expect(canEnterRoomWithWallet({ gameId: "omok" }, 0)).toBe(true);
+  });
+});
+
+describe("Seotda room start validation", () => {
+  it("treats every online Seotda participant as a player and checks all balances", () => {
+    const room: Room = {
+      gameId: "seotda",
+      moneyStake: 10_000,
+      host: { id: "host", userId: "u-host", name: "Host" },
+      guest: { id: "guest", userId: "u-guest", name: "Guest" },
+      spectators: { observer: { id: "observer", userId: "u-observer", name: "Observer" } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(getSeotdaParticipants(room)).toHaveLength(3);
+    expect(isRoomFull(room)).toBe(false);
+    expect(validateSeotdaStart(room, { "u-host": 10_000, "u-guest": 10_000, "u-observer": 9_999 })).toEqual({
+      ok: false,
+      reason: "insufficient-funds",
+      missing: [{ id: "observer", name: "Observer", balance: 9_999, required: 10_000 }],
+    });
+  });
+
+  it("caps Seotda rooms at six active players", () => {
+    const room: Room = {
+      gameId: "seotda",
+      moneyStake: 1,
+      host: { id: "host", name: "Host" },
+      guest: { id: "guest", name: "Guest" },
+      spectators: Object.fromEntries(Array.from({ length: 4 }, (_, index) => [`p${index}`, { id: `p${index}`, name: `P${index}` }])),
+      status: "waiting",
+      blackPlayer: "host",
+      turn: "black",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(isRoomFull(room)).toBe(true);
+  });
+
+  it("returns a finished Seotda room to waiting without changing its stake", () => {
+    const room: Room = {
+      gameId: "seotda",
+      moneyStake: 10_000,
+      host: { name: "Host" },
+      guest: { id: "guest", name: "Guest" },
+      status: "finished",
+      blackPlayer: "host",
+      turn: "black",
+      winner: null,
+      lastMove: null,
+      seotdaGame: { status: "finished" } as Room["seotdaGame"],
+    };
+
+    const reset = resetSeotdaGame(room);
+    expect(reset.status).toBe("waiting");
+    expect(reset.moneyStake).toBe(10_000);
+    expect(reset.seotdaGame).toBeUndefined();
+  });
+});
 
 describe("buildChatLogUpdates", () => {
   it("keeps the room chat entry and durable log entry in sync", () => {

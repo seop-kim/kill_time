@@ -1,9 +1,10 @@
-import { onValue, push, ref, runTransaction, update } from "firebase/database";
-import { getDb } from "./firebase";
+import { get, onValue, push, ref, runTransaction, update } from "firebase/database";
+import { ensureFirebaseAuth, getDb } from "./firebase";
 import {
   DAILY_ATTENDANCE_COIN_REWARD,
   exchangeCoinToMoney,
   exchangeMoneyToCoin,
+  normalizeSeotdaStake,
   type Currency,
   type WalletBalance,
 } from "./economy";
@@ -34,6 +35,7 @@ interface WalletProfileNode {
   attendance?: Record<string, unknown> | null;
   walletSettlements?: Record<string, unknown> | null;
   walletExchanges?: Record<string, unknown> | null;
+  seotdaStakes?: Record<string, unknown> | null;
   [key: string]: unknown;
 }
 
@@ -63,6 +65,16 @@ export function applyWalletDelta(wallet: WalletProfile, currency: Currency, delt
   const nextBalance = wallet[currency] + delta;
   if (nextBalance < 0) throw new Error(`${currency} 잔액이 부족합니다.`);
   return { ...wallet, [currency]: nextBalance };
+}
+
+export function applySeotdaStake(wallet: WalletProfile, stake: number): WalletProfile {
+  const normalizedStake = normalizeSeotdaStake(stake);
+  return applyWalletDelta(wallet, "money", -normalizedStake);
+}
+
+export function applySeotdaPayout(wallet: WalletProfile, amount: number): WalletProfile {
+  if (!Number.isInteger(amount) || amount < 0) throw new Error("섯다 정산 금액은 0 이상의 정수여야 합니다.");
+  return applyWalletDelta(wallet, "money", amount);
 }
 
 export function buildSettlementId(gameId: string, scopeId: string): string {
@@ -103,6 +115,7 @@ async function appendLedger(userId: string, entry: WalletLedgerEntry): Promise<v
 }
 
 export async function ensureWallet(userId: string): Promise<void> {
+  await ensureFirebaseAuth();
   await runTransaction(profileRef(userId), (current) => {
     const profile = asRecord(current) as WalletProfileNode;
     if (profile.wallet) return current;
@@ -114,6 +127,84 @@ export function subscribeWallet(userId: string, callback: (wallet: WalletProfile
   return onValue(ref(getDb(), `profiles/${userId}/wallet`), (snapshot) => {
     callback(normalizeWallet(snapshot.val()));
   });
+}
+
+export async function getWallet(userId: string): Promise<WalletProfile> {
+  const snapshot = await get(ref(getDb(), `profiles/${userId}/wallet`));
+  return normalizeWallet(snapshot.val());
+}
+
+export async function lockSeotdaStake(userId: string, matchId: string, stake: number, now = Date.now()): Promise<boolean> {
+  const normalizedStake = normalizeSeotdaStake(stake);
+  let locked = false;
+  let balanceAfter = 0;
+  const result = await runTransaction(profileRef(userId), (current) => {
+    const profile = asRecord(current) as WalletProfileNode;
+    const stakes = profile.seotdaStakes ?? {};
+    if (Object.prototype.hasOwnProperty.call(stakes, matchId)) return current;
+
+    const wallet = applySeotdaStake(normalizeWallet(profile.wallet), normalizedStake);
+    locked = true;
+    balanceAfter = wallet.money;
+    return {
+      ...profile,
+      wallet,
+      seotdaStakes: {
+        ...stakes,
+        [matchId]: { stake: normalizedStake, createdAt: now },
+      },
+    };
+  });
+
+  if (!result.committed || !locked) return false;
+  await appendLedger(userId, {
+    type: "stake",
+    gameId: "seotda",
+    matchId,
+    currency: "money",
+    amount: -normalizedStake,
+    balanceAfter,
+    createdAt: now,
+  });
+  return true;
+}
+
+export async function settleSeotdaMatch(userId: string, matchId: string, amount: number, now = Date.now()): Promise<boolean> {
+  if (!Number.isInteger(amount) || amount < 0) throw new Error("섯다 정산 금액은 0 이상의 정수여야 합니다.");
+  const settlementId = buildSettlementId("seotda", matchId);
+  let settled = false;
+  let balanceAfter = 0;
+  const result = await runTransaction(profileRef(userId), (current) => {
+    const profile = asRecord(current) as WalletProfileNode;
+    const settlements = profile.walletSettlements ?? {};
+    if (!shouldSettleWallet(settlements, settlementId)) return current;
+
+    const wallet = applySeotdaPayout(normalizeWallet(profile.wallet), amount);
+    settled = true;
+    balanceAfter = wallet.money;
+    return {
+      ...profile,
+      wallet,
+      walletSettlements: {
+        ...settlements,
+        [settlementId]: { gameId: "seotda", matchId, moneyDelta: amount, createdAt: now },
+      },
+    };
+  });
+
+  if (!result.committed || !settled) return false;
+  if (amount > 0) {
+    await appendLedger(userId, {
+      type: "payout",
+      gameId: "seotda",
+      matchId,
+      currency: "money",
+      amount,
+      balanceAfter,
+      createdAt: now,
+    });
+  }
+  return true;
 }
 
 export function subscribeAttendance(userId: string, dateKey: string, callback: (claimed: boolean) => void): () => void {

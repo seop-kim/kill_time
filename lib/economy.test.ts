@@ -4,6 +4,7 @@ import {
   exchangeCoinToMoney,
   exchangeMoneyToCoin,
   buildSeotdaEscrow,
+  canAffordSeotdaStake,
   getGirinCoinReward,
   getOmokCoinReward,
   normalizeSeotdaStake,
@@ -13,6 +14,11 @@ import {
 } from "./economy";
 
 describe("economy rules", () => {
+  it("requires enough money for a Seotda stake", () => {
+    expect(canAffordSeotdaStake(999, 1_000)).toBe(false);
+    expect(canAffordSeotdaStake(1_000, 1_000)).toBe(true);
+  });
+
   it("converts 100 coin into 10,000 money", () => {
     expect(exchangeCoinToMoney({ coin: 300, money: 0 }, 100)).toEqual({ coin: 200, money: 10_000 });
     expect(COIN_TO_MONEY_RATE).toBe(100);

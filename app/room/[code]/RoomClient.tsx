@@ -22,6 +22,7 @@ import {
   cancelUndoRequest,
   forfeit,
   getMatchParticipants,
+  getRoomHostId,
   kickParticipant,
   joinRoom,
   leaveRoom,
@@ -30,7 +31,11 @@ import {
   rematch,
   requestDraw,
   requestUndo,
+  rematchSeotda,
+  ROOM_HOME_PATH,
   sendChatMessage,
+  applySeotdaActionToRoom,
+  startSeotdaGame,
   skipTurn,
   subscribeChat,
   subscribeRoom,
@@ -61,7 +66,7 @@ import {
   type GirinGame,
 } from "@/lib/girin";
 import { getGirinCoinReward, getOmokCoinReward } from "@/lib/economy";
-import { settleCoinReward } from "@/lib/wallet";
+import { settleCoinReward, subscribeWallet, type WalletProfile } from "@/lib/wallet";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
   recordGameResult,
@@ -83,6 +88,7 @@ import { GirinGamePanel } from "@/components/GirinGamePanel";
 import { WorkCoverSheet } from "@/components/WorkCoverSheet";
 import { DocumentSettingsDialog } from "@/components/DocumentSettingsDialog";
 import { SeotdaGamePanel } from "@/components/SeotdaGamePanel";
+import { getLegalSeotdaActions, type SeotdaActionType } from "@/lib/seotda";
 import { ErrorPage } from "@/components/ErrorPage";
 import { toggleChatOpen } from "@/lib/chat";
 
@@ -92,6 +98,10 @@ const CELL_W = 26;
 const CELL_H = 22;
 const HEADER_W = 40;
 const MOVE_TAG_MS = 5000;
+
+function formatAmount(value: number): string {
+  return value.toLocaleString("ko-KR");
+}
 
 const GAMES: GameTab[] = [
   { id: "omok", label: "Omok", available: true },
@@ -111,7 +121,7 @@ function opposite(role: PlayerRole): PlayerRole {
 
 function nameOfRole(role: PlayerRole, room: Room): string | undefined {
   if (room.gamePlayers) return room.gamePlayers[role]?.name;
-  return role === "host" ? room.host.name : room.guest?.name;
+  return role === "host" ? room.host?.name : room.guest?.name;
 }
 
 function nameOfColor(color: Stone, room: Room): string | undefined {
@@ -129,7 +139,7 @@ function effectiveRoleOf(identity: StoredIdentity, room: Room): ParticipantRole 
     if (matchesIdentity(identity, room.gamePlayers.guest)) return "guest";
     return "spectator";
   }
-  if (identity.role === "host" || (identity.participantId && room.host.id === identity.participantId)) return "host";
+  if (identity.role === "host" || (identity.participantId && room.host?.id === identity.participantId)) return "host";
   const guestId = room.guest?.id;
   if (
     room.guest &&
@@ -143,7 +153,7 @@ function effectiveRoleOf(identity: StoredIdentity, room: Room): ParticipantRole 
 
 function participantForRole(role: PlayerRole, room: Room): MatchParticipant | null {
   if (room.gamePlayers) return room.gamePlayers[role];
-  if (role === "host") return { id: room.host.id ?? "host", name: room.host.name, role: "host" };
+  if (role === "host") return room.host ? { id: room.host.id ?? "host", name: room.host.name, role: "host" } : null;
   return room.guest ? { id: room.guest.id ?? "guest", name: room.guest.name, role: "guest" } : null;
 }
 
@@ -181,6 +191,9 @@ export default function RoomClient({ code }: { code: string }) {
   const [eraserWidth, setEraserWidth] = useState(1);
   const [drawingClearVersion, setDrawingClearVersion] = useState(0);
   const [sensitiveMode, setSensitiveMode] = useState(false);
+  const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
+  const [walletLoaded, setWalletLoaded] = useState(false);
+  const [participantMoney, setParticipantMoney] = useState<Record<string, number>>({});
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
   const statsAttemptedRef = useRef<string | null>(null);
@@ -202,6 +215,13 @@ export default function RoomClient({ code }: { code: string }) {
   const effectiveRole = room && identity ? effectiveRoleOf(identity, room) : null;
   const playerRole: PlayerRole | null = effectiveRole === "host" || effectiveRole === "guest" ? effectiveRole : null;
   const activeGameId = normalizeRoomGameId(room?.gameId);
+  const roomHostId = getRoomHostId(room);
+  const seotdaWalletParticipantKey = room && activeGameId === "seotda"
+    ? getMatchParticipants(room)
+      .filter((participant) => participant.userId)
+      .map((participant) => `${participant.id}:${participant.userId}`)
+      .join("|")
+    : "";
 
   useEffect(() => {
     // localStorage doesn't exist during SSR, so this can only run after mount.
@@ -218,12 +238,39 @@ export default function RoomClient({ code }: { code: string }) {
   }, [code]);
 
   useEffect(() => {
-    if (!identity || identity.role === "host" || !room?.host.id || identity.participantId !== room.host.id) return;
+    const userId = identity?.userId ?? getOrCreateUserId();
+    return subscribeWallet(userId, (nextWallet) => {
+      setWallet(nextWallet);
+      setWalletLoaded(true);
+    });
+  }, [identity?.userId]);
+
+  useEffect(() => {
+    const participants = room && activeGameId === "seotda"
+      ? getMatchParticipants(room).filter((participant) => participant.userId)
+      : [];
+    if (participants.length === 0) {
+      return undefined;
+    }
+
+    const unsubscribes = participants.map((participant) =>
+      subscribeWallet(participant.userId!, (nextWallet) => {
+        setParticipantMoney((current) => ({ ...current, [participant.id]: nextWallet.money }));
+      }),
+    );
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  // The participant key is intentionally used instead of the whole room so a
+  // bet update does not recreate every wallet subscription.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGameId, seotdaWalletParticipantKey]);
+
+  useEffect(() => {
+    if (!identity || identity.role === "host" || !roomHostId || identity.participantId !== roomHostId) return;
     const promotedIdentity: StoredIdentity = { ...identity, role: "host" };
     saveIdentity(code, promotedIdentity);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIdentity(promotedIdentity);
-  }, [code, identity, room?.host.id]);
+  }, [code, identity, roomHostId]);
 
   useEffect(() => {
     if (!identity?.userId) return undefined;
@@ -273,12 +320,12 @@ export default function RoomClient({ code }: { code: string }) {
   useEffect(() => {
     if (!identity || !effectiveRole) return;
     try {
-      const isRoomHost = identity.role === "host" || identity.participantId === room?.host.id;
+      const isRoomHost = identity.role === "host" || identity.participantId === roomHostId;
       return armPresence(code, isRoomHost ? "host" : identity.role, identity.participantId);
     } catch {
       return undefined;
     }
-  }, [code, identity, effectiveRole, room?.host.id]);
+  }, [code, identity, effectiveRole, roomHostId]);
 
   useEffect(() => {
     if (!identity) return;
@@ -290,11 +337,26 @@ export default function RoomClient({ code }: { code: string }) {
   }, [code, identity]);
 
   useEffect(() => {
-    if (!room) return;
+    if (!room || !roomHostId) return;
     if (room.status === "playing" && prevStatusRef.current === "waiting") {
-      showToast("대진이 성사되어 게임을 시작했습니다.", "info");
+      showToast(activeGameId === "seotda" ? "섯다 게임을 시작했습니다. 패가 배분되었습니다." : "대진이 성사되어 게임을 시작했습니다.", "info");
     }
     if (room.status === "finished" && prevStatusRef.current !== "finished") {
+      if (activeGameId === "seotda") {
+        const winnerIds = room.seotdaGame?.winnerIds ?? [];
+        const myId = identity?.role === "host" ? room.host.id ?? "host" : identity?.participantId;
+        showToast(
+          winnerIds.length > 1
+            ? "섯다 무승부입니다."
+            : winnerIds.includes(myId ?? "")
+              ? "섯다에서 승리했습니다!"
+              : `${room.seotdaGame?.players[winnerIds[0]]?.name ?? "상대방"}님이 섯다에서 승리했습니다.`,
+          "info",
+          { placement: "top-center", emphasis: true },
+        );
+        prevStatusRef.current = room.status;
+        return;
+      }
       const winnerName = room.winner && room.winner !== "draw" ? nameOfColor(room.winner, room) : undefined;
       const resultMessage =
         room.winner === "draw"
@@ -311,10 +373,10 @@ export default function RoomClient({ code }: { code: string }) {
       );
     }
     prevStatusRef.current = room.status;
-  }, [room, playerRole, showToast]);
+  }, [activeGameId, identity, room, playerRole, roomHostId, showToast]);
 
   useEffect(() => {
-    if (room?.status !== "finished") {
+    if (room?.status !== "finished" || !roomHostId) {
       return;
     }
     if (activeGameId !== "omok") return;
@@ -345,7 +407,23 @@ export default function RoomClient({ code }: { code: string }) {
         })
         .catch(() => showToast("오목 코인 보상을 저장하지 못했습니다.", "error"));
     }
-  }, [activeGameId, code, identity, playerRole, room, showToast]);
+  }, [activeGameId, code, identity, playerRole, room, roomHostId, showToast]);
+
+  useEffect(() => {
+    if (activeGameId !== "seotda" || room?.status !== "finished" || !identity?.userId || !room.seotdaGame) return;
+    const game = room.seotdaGame;
+    const winnerIds = game.winnerIds ?? [];
+    const myId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+    if (!myId || winnerIds.length === 0) return;
+
+    const resultId = `seotda:${code}:${game.matchId}`;
+    if (!shouldAttemptStatsRecord(statsAttemptedRef.current, resultId)) return;
+    const result = winnerIds.length > 1 ? "draw" : winnerIds.includes(myId) ? "win" : "loss";
+    statsAttemptedRef.current = resultId;
+    recordGameResult(identity.userId, identity.name, "seotda", result, resultId).catch(() => {
+      showToast("전적을 저장하지 못했습니다.", "error");
+    });
+  }, [activeGameId, code, identity, room, showToast]);
 
   useEffect(() => {
     const game = room?.girinGame;
@@ -478,6 +556,10 @@ export default function RoomClient({ code }: { code: string }) {
   const roomStatus = room?.status;
   const currentGirinStatus = room?.girinGame?.status;
   const girinTurnStartedAt = room?.girinGame?.turnStartedAt;
+  const seotdaGame = room?.seotdaGame;
+  const seotdaStatus = seotdaGame?.status;
+  const seotdaTurnStartedAt = seotdaGame?.turnStartedAt;
+  const seotdaCurrentPlayerId = seotdaGame?.currentPlayerId;
 
   useEffect(() => {
     if (activeGameId === "girin") {
@@ -502,6 +584,35 @@ export default function RoomClient({ code }: { code: string }) {
       };
     }
 
+    if (activeGameId === "seotda") {
+      if (seotdaStatus !== "betting" || !seotdaTurnStartedAt || !seotdaCurrentPlayerId || !seotdaGame) {
+        setTimerSeconds(null);
+        return undefined;
+      }
+
+      let interval: ReturnType<typeof setInterval> | null = null;
+      function tickSeotda() {
+        const elapsed = Math.floor((Date.now() - seotdaTurnStartedAt!) / 1000);
+        const remaining = Math.max(0, TURN_SECONDS - elapsed);
+        setTimerSeconds(remaining);
+        if (remaining <= 0) {
+          if (interval) clearInterval(interval);
+          const legalActions = getLegalSeotdaActions(seotdaGame!, seotdaCurrentPlayerId!);
+          const timeoutAction: SeotdaActionType = legalActions.includes("call")
+            ? "call"
+            : legalActions.includes("check")
+              ? "check"
+              : "fold";
+          applySeotdaActionToRoom(code, seotdaCurrentPlayerId!, timeoutAction).catch(() => {});
+        }
+      }
+      tickSeotda();
+      interval = setInterval(tickSeotda, 1000);
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    }
+
     if (roomStatus !== "playing" || !turnStartedAt || !currentTurn) {
       setTimerSeconds(null);
       return undefined;
@@ -521,7 +632,7 @@ export default function RoomClient({ code }: { code: string }) {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [activeGameId, currentGirinStatus, girinTurnStartedAt, turnStartedAt, currentTurn, roomStatus, code]);
+  }, [activeGameId, currentGirinStatus, girinTurnStartedAt, seotdaCurrentPlayerId, seotdaGame, seotdaStatus, seotdaTurnStartedAt, turnStartedAt, currentTurn, roomStatus, code]);
 
   // Opponent disconnect → grace period → forfeit in their favor.
   const opponentRole = playerRole ? opposite(playerRole) : null;
@@ -566,14 +677,14 @@ export default function RoomClient({ code }: { code: string }) {
   }, [opponentOnline, roomStatus, identity, playerRole, opponentRole, code]);
 
   useEffect(() => {
-    if (!room || !identity || kickedOutRef.current) return;
-    const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+    if (!room || !roomHostId || !identity || kickedOutRef.current) return;
+    const participantId = identity.role === "host" ? roomHostId : identity.participantId;
     if (!participantId || !room.kickedParticipants?.[participantId]) return;
 
     kickedOutRef.current = true;
     showToast("방장에 의해 문서에서 추방되었습니다.", "error");
     router.replace("/workspace");
-  }, [identity, room, router, showToast]);
+  }, [identity, room, roomHostId, router, showToast]);
 
   useEffect(() => {
     const transfer = JSON.parse(hostTransferKey) as { hostOffline: boolean };
@@ -615,17 +726,25 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("표시 이름은 2~8자로 입력해 주세요.", "error");
       return;
     }
+    if (!walletLoaded) {
+      showToast("머니 정보를 확인하는 중입니다. 잠시 후 다시 시도해 주세요.", "info");
+      return;
+    }
     setJoining(true);
     try {
-      const result = await joinRoom(code, trimmed);
+      const userId = getOrCreateUserId();
+      const result = await joinRoom(code, trimmed, wallet.money, userId);
       if (!result.ok) {
         showToast(
-          result.reason === "not-found" ? "문서를 찾을 수 없습니다." : "이미 인원이 가득한 문서입니다.",
+          result.reason === "not-found"
+            ? "문서를 찾을 수 없습니다."
+            : result.reason === "insufficient-funds"
+              ? "섯다 판돈보다 머니가 부족해 입장할 수 없습니다."
+              : "이미 인원이 가득한 문서입니다.",
           "error",
         );
         return;
       }
-      const userId = getOrCreateUserId();
       saveIdentity(code, { role: result.role, name: trimmed, participantId: result.participantId, userId });
       setIdentity({ role: result.role, name: trimmed, participantId: result.participantId, userId });
     } finally {
@@ -636,7 +755,19 @@ export default function RoomClient({ code }: { code: string }) {
   function requestStartGame() {
     if (!room || !identity) return;
     if (activeGameId === "seotda") {
-      showToast("섯다 게임 화면은 준비 중입니다.", "info");
+      if (identity.role !== "host") {
+        showToast("방장만 섯다 게임을 시작할 수 있습니다.", "info");
+        return;
+      }
+      if (room.status !== "waiting") {
+        showToast("대기 중인 방에서만 섯다를 시작할 수 있습니다.", "info");
+        return;
+      }
+      if (getMatchParticipants(room).length < 2) {
+        showToast("두 명 이상 참여해야 섯다를 시작할 수 있습니다.", "info");
+        return;
+      }
+      setStartConfirmOpen(true);
       return;
     }
     if (activeGameId === "girin") {
@@ -677,6 +808,27 @@ export default function RoomClient({ code }: { code: string }) {
   async function handleConfirmStartGame() {
     setStartConfirmOpen(false);
     if (!room || !identity) return;
+    if (activeGameId === "seotda") {
+      if (identity.role !== "host") return;
+      try {
+        const result = await startSeotdaGame(code);
+        if (!result.ok) {
+          if (result.reason === "insufficient-funds") {
+            const names = result.missing?.map((participant) => `${participant.name}(${formatAmount(participant.balance)}/${formatAmount(participant.required)})`).join(", ");
+            showToast(`머니가 부족해 시작할 수 없습니다: ${names ?? "참여자 확인 필요"}`, "error");
+          } else if (result.reason === "not-enough-players") {
+            showToast("두 명 이상 참여해야 섯다를 시작할 수 있습니다.", "info");
+          } else {
+            showToast("섯다 게임을 시작할 수 없는 상태입니다.", "info");
+          }
+          return;
+        }
+        showToast("섯다 게임을 시작했습니다. 패가 배분되었습니다.", "info");
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "섯다 게임을 시작하지 못했습니다.", "error");
+      }
+      return;
+    }
     if (activeGameId === "girin") {
       if (identity.role !== "host") return;
       try {
@@ -821,6 +973,15 @@ export default function RoomClient({ code }: { code: string }) {
     }
   }
 
+  async function handleSeotdaRematch() {
+    try {
+      await rematchSeotda(code);
+      showToast("다시 대결할 수 있도록 대기 상태로 돌아갔습니다.", "info");
+    } catch {
+      showToast("섯다 게임을 다시 시작하지 못했습니다.", "error");
+    }
+  }
+
   function handleRestartClick() {
     if (!room) return;
     if (activeGameId === "girin") {
@@ -829,6 +990,14 @@ export default function RoomClient({ code }: { code: string }) {
         return;
       }
       resetGirinGame(code).catch(() => showToast("게임을 다시 시작하지 못했습니다.", "error"));
+      return;
+    }
+    if (activeGameId === "seotda") {
+      if (room.status !== "finished") {
+        showToast("게임이 종료된 후 다시 시작할 수 있습니다.", "info");
+        return;
+      }
+      handleSeotdaRematch();
       return;
     }
     if (room.status !== "finished") {
@@ -847,6 +1016,7 @@ export default function RoomClient({ code }: { code: string }) {
   }
 
   async function leaveRoomAndNavigate() {
+    router.push(ROOM_HOME_PATH);
     try {
       if (identity) {
         await leaveRoom(code, identity.role, identity.participantId);
@@ -854,7 +1024,6 @@ export default function RoomClient({ code }: { code: string }) {
     } catch {
       // Leaving the page is still preferable if the cleanup write fails.
     }
-    router.push("/");
   }
 
   async function handleConfirmLeave() {
@@ -945,7 +1114,7 @@ export default function RoomClient({ code }: { code: string }) {
     message
       .then(() => {
         const girin = room?.girinGame;
-        const participantId = identity.role === "host" ? room?.host.id ?? "host" : identity.participantId;
+        const participantId = identity.role === "host" ? roomHostId ?? "host" : identity.participantId;
         if (activeGameId === "girin" && girin?.status === "drawing" && participantId) {
           return submitGirinAnswerToRoom(code, participantId, text);
         }
@@ -968,6 +1137,15 @@ export default function RoomClient({ code }: { code: string }) {
       <ErrorPage
         title="문서를 찾을 수 없습니다."
         message="존재하지 않거나 이미 삭제된 문서입니다."
+      />
+    );
+  }
+
+  if (!roomHostId) {
+    return (
+      <ErrorPage
+        title="문서 정보를 불러오지 못했습니다."
+        message="문서 연결이 정리되는 중입니다. 워크스페이스로 이동해 주세요."
       />
     );
   }
@@ -1009,17 +1187,25 @@ export default function RoomClient({ code }: { code: string }) {
 
   const hostParticipant = participantForRole("host", room)!;
   const guestParticipant = participantForRole("guest", room);
-  const roomHostId = room.host.id ?? "host";
-  const avatars: ChromeAvatar[] = [
-    { id: hostParticipant.id, name: hostParticipant.name, color: "#7b3fe4", isTurn: hostIsTurn, isHost: hostParticipant.id === roomHostId, online: participantOnline(room, hostParticipant) !== false },
-    ...(guestParticipant
-      ? [{ id: guestParticipant.id, name: guestParticipant.name, color: "#e4693f", isTurn: guestIsTurn, isHost: guestParticipant.id === roomHostId, online: participantOnline(room, guestParticipant) !== false }]
-      : []),
-  ];
-
+  const currentRoomHostId = roomHostId ?? "host";
   const matchParticipants = getMatchParticipants(room);
+  const avatars: ChromeAvatar[] = activeGameId === "seotda"
+    ? matchParticipants.map((participant, index) => ({
+        id: participant.id,
+        name: participant.name,
+        color: ["#7b3fe4", "#e4693f", "#217346", "#c55a11", "#7030a0", "#2f75b5"][index % 6],
+        isTurn: room.seotdaGame?.currentPlayerId === participant.id,
+        isHost: participant.id === currentRoomHostId,
+        online: participantOnline(room, participant) !== false,
+      }))
+    : [
+        { id: hostParticipant.id, name: hostParticipant.name, color: "#7b3fe4", isTurn: hostIsTurn, isHost: hostParticipant.id === currentRoomHostId, online: participantOnline(room, hostParticipant) !== false },
+        ...(guestParticipant
+          ? [{ id: guestParticipant.id, name: guestParticipant.name, color: "#e4693f", isTurn: guestIsTurn, isHost: guestParticipant.id === currentRoomHostId, online: participantOnline(room, guestParticipant) !== false }]
+          : []),
+      ];
   const activePlayerIds = new Set(avatars.map((avatar) => avatar.id));
-  const observerAvatars: ChromeAvatar[] = matchParticipants
+  const observerAvatars: ChromeAvatar[] = activeGameId === "seotda" ? [] : matchParticipants
     .filter((participant) => !activePlayerIds.has(participant.id))
     .map((participant) => ({
       id: participant.id,
@@ -1043,7 +1229,9 @@ export default function RoomClient({ code }: { code: string }) {
           isTurn: guestIsTurn,
           online: avatars[1].online,
         }
-      : effectiveRole === "spectator"
+      : effectiveRole === "spectator" && activeGameId === "seotda" && avatars.find((avatar) => avatar.id === identity.participantId)
+        ? avatars.find((avatar) => avatar.id === identity.participantId)!
+        : effectiveRole === "spectator"
         ? {
             id: identity.userId ?? identity.participantId,
             name: identity.name,
@@ -1072,7 +1260,7 @@ export default function RoomClient({ code }: { code: string }) {
             : "대기 중";
   const canStartGame =
     activeGameId === "seotda"
-      ? false
+      ? room.status === "waiting" && identity.role === "host"
       : activeGameId === "girin"
       ? girinStatus === "waiting" && identity.role === "host"
       : room.status === "waiting";
@@ -1122,10 +1310,19 @@ export default function RoomClient({ code }: { code: string }) {
         games={GAMES}
         activeGameId={activeGameId}
         onSelectGame={handleSelectGame}
-        onRematch={currentGameStatus === "finished" && identity.role === "host" ? (activeGameId === "girin" ? handleRestartClick : handleRematch) : undefined}
-        rematchLabel="새 버전으로 계속"
+        onlyActiveGameTab
+        onRematch={
+          currentGameStatus === "finished" && identity.role === "host"
+            ? activeGameId === "girin"
+              ? handleRestartClick
+              : activeGameId === "seotda"
+                ? handleSeotdaRematch
+                : handleRematch
+            : undefined
+        }
+        rematchLabel={activeGameId === "seotda" ? "다시 하기" : "새 버전으로 계속"}
         onStartGame={canStartGame ? requestStartGame : undefined}
-        startActionLabel={activeGameId === "girin" ? "게임 시작" : "대진 참여"}
+        startActionLabel={activeGameId === "girin" || activeGameId === "seotda" ? "게임 시작" : "대진 참여"}
         onRestart={currentGameStatus === "finished" && identity.role === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
         onDocumentSettings={identity.role === "host" ? openDocumentSettings : undefined}
@@ -1137,6 +1334,7 @@ export default function RoomClient({ code }: { code: string }) {
         onRequestDraw={activeGameId === "omok" && playerRole ? handleRequestDraw : undefined}
         sensitiveMode={sensitiveMode}
         onToggleSensitivity={handleSensitivityToggle}
+        showSeotdaRanks={activeGameId === "seotda"}
         drawingColor={drawingColor}
         onDrawingColorChange={setDrawingColor}
         drawingWidth={drawingWidth}
@@ -1197,7 +1395,23 @@ export default function RoomClient({ code }: { code: string }) {
             }}
           />
         ) : activeGameId === "seotda" ? (
-          <SeotdaGamePanel moneyStake={room.moneyStake ?? SEOTDA_STAKE_MIN} />
+          <SeotdaGamePanel
+            game={room.seotdaGame ?? null}
+            playerId={identity.role === "host" ? room.host.id ?? "host" : identity.participantId ?? ""}
+            onAction={(action) => {
+              const playerId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+              if (!playerId) return;
+              applySeotdaActionToRoom(code, playerId, action).catch((error) =>
+                showToast(error instanceof Error ? error.message : "베팅을 저장하지 못했습니다.", "error"),
+              );
+            }}
+            participantMoney={participantMoney}
+            onRematch={
+              activeGameId === "seotda" && room.status === "finished" && identity.role === "host"
+                ? handleSeotdaRematch
+                : undefined
+            }
+          />
         ) : (
           <div className="h-full overflow-auto" ref={centerGridOnMount}>
             <div
@@ -1252,13 +1466,15 @@ export default function RoomClient({ code }: { code: string }) {
         open={startConfirmOpen}
         onConfirm={handleConfirmStartGame}
         onCancel={() => setStartConfirmOpen(false)}
-        title={activeGameId === "girin" ? "게임을 시작하시겠습니까?" : "대진에 참여하시겠습니까?"}
+        title={activeGameId === "girin" || activeGameId === "seotda" ? "게임을 시작하시겠습니까?" : "대진에 참여하시겠습니까?"}
         description={
           activeGameId === "girin"
             ? "방의 모든 참여자가 게임에 참여하고, 순번이 무작위로 정해집니다."
+            : activeGameId === "seotda"
+              ? "참여자의 판돈을 잠근 뒤 패를 배분하고 베팅을 시작합니다."
             : "두 명이 대진에 참여하면 자동으로 게임이 시작됩니다."
         }
-        confirmLabel={activeGameId === "girin" ? "시작" : "참여하기"}
+        confirmLabel={activeGameId === "girin" || activeGameId === "seotda" ? "시작" : "참여하기"}
       />
 
       <DocumentSettingsDialog

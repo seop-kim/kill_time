@@ -24,6 +24,11 @@ export function normalizeSeotdaStake(value: number): number {
   return value;
 }
 
+export function canAffordSeotdaStake(money: number, stake: number): boolean {
+  const normalizedStake = normalizeSeotdaStake(stake);
+  return Number.isFinite(money) && money >= normalizedStake;
+}
+
 /**
  * Returns the amount that must be locked for each player in a Seotda match.
  * Keeping this as a per-user map makes the all-or-nothing start transaction

@@ -13,6 +13,7 @@ import {
   ParticipantList,
   ProfileStatsDropdown,
   ShareDropdown,
+  SeotdaHandRankTooltip,
   SettingsDropdown,
   StartGameConfirmDialog,
 } from "./ExcelChrome";
@@ -41,6 +42,28 @@ describe("ExcelChrome", () => {
     expect(rootClass).toMatch(/\boverflow-hidden\b/);
     expect(rootClass).not.toMatch(/\bh-screen\b/);
     expect(markup).toContain("통합 문서 통계");
+  });
+
+  it("can show only the active game in a room sheet tab", () => {
+    const markup = renderToStaticMarkup(
+      <ExcelChrome
+        fileName="room.xlsx"
+        avatars={[]}
+        onShare={() => {}}
+        games={[
+          { id: "omok", label: "Omok", available: true },
+          { id: "girin", label: "girin", available: true },
+        ]}
+        activeGameId="girin"
+        onSelectGame={() => {}}
+        onlyActiveGameTab
+      >
+        <div>cell area</div>
+      </ExcelChrome>,
+    );
+
+    expect(markup).toContain(">girin</button>");
+    expect(markup).not.toContain(">Omok</button>");
   });
 
   it("keeps a fixed FHD canvas so narrow windows clip instead of reflowing the chrome", () => {
@@ -400,6 +423,17 @@ describe("ExcelChrome", () => {
     expect(markup).toContain("Omok");
     expect(markup).toContain("2승");
     expect(markup).toContain("1패");
+  });
+
+  it("provides the Seotda hand-ranking tooltip content", () => {
+    const markup = renderToStaticMarkup(<SeotdaHandRankTooltip />);
+
+    expect(markup).toContain('role="tooltip"');
+    expect(markup).toContain("섯다 족보");
+    expect(markup).toContain("38광땡");
+    expect(markup).toContain("10땡");
+    expect(markup).toContain("알리");
+    expect(markup).toContain("9끗");
   });
 
   it("shows girin quiz records with its own metrics", () => {

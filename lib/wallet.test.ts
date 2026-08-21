@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   applyWalletDelta,
+  applySeotdaPayout,
+  applySeotdaStake,
   buildSettlementId,
   normalizeWallet,
   shouldClaimAttendance,
@@ -27,5 +29,12 @@ describe("wallet helpers", () => {
     expect(shouldClaimAttendance({ "2026-08-20": { reward: 500 } }, "2026-08-20")).toBe(false);
     expect(shouldSettleWallet({}, "omok:room-1:1")).toBe(true);
     expect(shouldSettleWallet({ "omok:room-1:1": { coinDelta: 300 } }, "omok:room-1:1")).toBe(false);
+  });
+
+  it("moves a Seotda stake out of the wallet and applies a payout", () => {
+    const afterStake = applySeotdaStake({ coin: 0, money: 10_000 }, 10_000);
+    expect(afterStake).toEqual({ coin: 0, money: 0 });
+    expect(applySeotdaPayout(afterStake, 25_000)).toEqual({ coin: 0, money: 25_000 });
+    expect(() => applySeotdaStake({ coin: 0, money: 9_999 }, 10_000)).toThrow();
   });
 });

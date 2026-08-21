@@ -371,6 +371,33 @@ function StackBtn({ label, icon, onClick, selected, trigger, buttonRef }: { labe
   );
 }
 
+export function SeotdaHandRankTooltip() {
+  const ranks = [
+    ["38광땡", "광땡 중 최고"],
+    ["18광땡 · 13광땡", "광땡"],
+    ["10땡 ~ 1땡", "같은 숫자 두 장"],
+    ["알리 · 독사 · 구삥", "특수 족보"],
+    ["장삥 · 장사 · 세륙", "특수 족보"],
+    ["9끗 ~ 0끗", "끗수"],
+  ];
+
+  return (
+    <div role="tooltip" aria-label="섯다 족보" className="w-[230px] rounded-sm border border-[#c8c8c8] bg-white p-2.5 text-[10px] text-[#333] shadow-md">
+      <div className="border-b border-[#ededed] pb-1.5 text-[12px] font-semibold text-[#1f4e79]">섯다 족보</div>
+      <div className="mt-1.5 flex flex-col gap-1">
+        {ranks.map(([name, description], index) => (
+          <div key={name} className="flex items-center gap-2 whitespace-nowrap">
+            <span className="w-4 text-right font-semibold text-[#217346]">{index + 1}</span>
+            <span className="font-medium">{name}</span>
+            <span className="ml-auto text-[9px] text-[#777]">{description}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 border-t border-[#ededed] pt-1.5 text-[9px] text-[#888]">높은 족보부터 표시됩니다.</div>
+    </div>
+  );
+}
+
 function Dropdown({ children, w = 70 }: { children: React.ReactNode; w?: number }) {
   return (
     <div
@@ -865,6 +892,7 @@ export function ExcelChrome({
   onRequestUndo,
   onRequestDraw,
   sensitiveMode = false,
+  onlyActiveGameTab = false,
   onToggleSensitivity,
   drawingColor = "#c00",
   onDrawingColorChange,
@@ -875,6 +903,7 @@ export function ExcelChrome({
   eraserWidth = 1,
   onEraserWidthChange,
   onClearDrawing,
+  showSeotdaRanks = false,
   children,
 }: {
   fileName: string;
@@ -903,6 +932,7 @@ export function ExcelChrome({
   onRequestUndo?: () => void;
   onRequestDraw?: () => void;
   sensitiveMode?: boolean;
+  onlyActiveGameTab?: boolean;
   onToggleSensitivity?: () => void;
   drawingColor?: string;
   onDrawingColorChange?: (color: string) => void;
@@ -913,6 +943,7 @@ export function ExcelChrome({
   eraserWidth?: number;
   onEraserWidthChange?: (width: number) => void;
   onClearDrawing?: () => void;
+  showSeotdaRanks?: boolean;
   children: React.ReactNode;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -922,6 +953,7 @@ export function ExcelChrome({
   const [eraserOpen, setEraserOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [seotdaRanksOpen, setSeotdaRanksOpen] = useState(false);
 
   // The add-ins button lives inside the fixed-width ribbon toolbar row, which
   // clips overflow, so a dropdown nested inside it gets clipped instead of
@@ -933,8 +965,10 @@ export function ExcelChrome({
   const [fontColorPos, setFontColorPos] = useState<{ top: number; left: number } | null>(null);
   const eraserButtonRef = useRef<HTMLButtonElement>(null);
   const editEraserButtonRef = useRef<HTMLButtonElement>(null);
+  const seotdaRanksButtonRef = useRef<HTMLButtonElement>(null);
   const [eraserPos, setEraserPos] = useState<{ top: number; left: number } | null>(null);
   const [eraserAnchor, setEraserAnchor] = useState<"toolbar" | "edit">("toolbar");
+  const [seotdaRanksPos, setSeotdaRanksPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (addinsOpen && addinsButtonRef.current) {
@@ -958,9 +992,17 @@ export function ExcelChrome({
     }
   }, [eraserOpen, eraserAnchor]);
 
+  useEffect(() => {
+    if (seotdaRanksOpen && showSeotdaRanks && seotdaRanksButtonRef.current) {
+      const rect = seotdaRanksButtonRef.current.getBoundingClientRect();
+      setSeotdaRanksPos({ top: rect.bottom + 6, left: rect.left });
+    }
+  }, [seotdaRanksOpen, showSeotdaRanks]);
+
   const displayParticipants = participants ? getParticipantGroupsForGame(activeGameId, participants) : undefined;
   const displayAvatars = displayParticipants?.players ?? avatars;
   const profile = profileAvatar ?? displayAvatars[0];
+  const visibleGames = onlyActiveGameTab ? games.filter((game) => game.id === activeGameId) : games;
 
   return (
     <div
@@ -1137,7 +1179,7 @@ export function ExcelChrome({
               onClick={onStatusClick}
               attention={statusLabel === "대기 중" && Boolean(onStatusClick)}
             />
-            <TopBtn icon={<ShieldIcon />} label="민감도" />
+            <TopBtn icon={<ShieldIcon />} label="민감도" onClick={onToggleSensitivity} />
             <Chevron />
             <div className="relative ml-1 shrink-0">
               <button
@@ -1415,7 +1457,24 @@ export function ExcelChrome({
               </div>
               <div className="flex flex-col gap-[3px]">
                 <StackBtn label="정렬 및 필터" icon={<FunnelIcon />} />
-                <StackBtn label="찾기 및 선택" icon={<SearchIconSmall />} />
+                <div>
+                  <StackBtn
+                    label="찾기 및 선택"
+                    icon={<SearchIconSmall />}
+                    onClick={showSeotdaRanks ? () => setSeotdaRanksOpen((open) => !open) : undefined}
+                    buttonRef={showSeotdaRanks ? seotdaRanksButtonRef : undefined}
+                    selected={showSeotdaRanks && seotdaRanksOpen}
+                  />
+                  {showSeotdaRanks && seotdaRanksOpen && seotdaRanksPos && createPortal(
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setSeotdaRanksOpen(false)} />
+                      <div className="fixed z-50" style={{ top: seotdaRanksPos.top, left: seotdaRanksPos.left }}>
+                        <SeotdaHandRankTooltip />
+                      </div>
+                    </>,
+                    document.body,
+                  )}
+                </div>
               </div>
             </div>
             <GroupLabel>편집</GroupLabel>
@@ -1486,7 +1545,7 @@ export function ExcelChrome({
               IT 운영 현황
             </span>
           ) : (
-            games.map((g) => (
+            visibleGames.map((g) => (
               <button
                 key={g.id}
                 onClick={() => onSelectGame(g.id)}

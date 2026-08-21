@@ -1,7 +1,8 @@
 import { onValue, ref, set } from "firebase/database";
-import { getDb } from "./firebase";
+import { ensureFirebaseAuth, getDb } from "./firebase";
 
 export async function saveProfileNickname(userId: string, nickname: string): Promise<void> {
+  await ensureFirebaseAuth();
   await set(ref(getDb(), `profiles/${userId}/nickname`), nickname);
 }
 
