@@ -371,6 +371,33 @@ function StackBtn({ label, icon, onClick, selected, trigger, buttonRef }: { labe
   );
 }
 
+export function SeotdaHandRankTooltip() {
+  const ranks = [
+    ["38광땡", "광땡 중 최고"],
+    ["18광땡 · 13광땡", "광땡"],
+    ["10땡 ~ 1땡", "같은 숫자 두 장"],
+    ["알리 · 독사 · 구삥", "특수 족보"],
+    ["장삥 · 장사 · 세륙", "특수 족보"],
+    ["9끗 ~ 0끗", "끗수"],
+  ];
+
+  return (
+    <div role="tooltip" aria-label="Up 족보" className="w-[230px] rounded-sm border border-[#c8c8c8] bg-white p-2.5 text-[10px] text-[#333] shadow-md">
+      <div className="border-b border-[#ededed] pb-1.5 text-[12px] font-semibold text-[#1f4e79]">Up 족보</div>
+      <div className="mt-1.5 flex flex-col gap-1">
+        {ranks.map(([name, description], index) => (
+          <div key={name} className="flex items-center gap-2 whitespace-nowrap">
+            <span className="w-4 text-right font-semibold text-[#217346]">{index + 1}</span>
+            <span className="font-medium">{name}</span>
+            <span className="ml-auto text-[9px] text-[#777]">{description}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 border-t border-[#ededed] pt-1.5 text-[9px] text-[#888]">높은 족보부터 표시됩니다.</div>
+    </div>
+  );
+}
+
 function Dropdown({ children, w = 70 }: { children: React.ReactNode; w?: number }) {
   return (
     <div
@@ -525,7 +552,15 @@ export function getParticipantGroupsForGame(gameId: string, participants: Partic
   };
 }
 
-export function ParticipantList({ participants }: { participants: ParticipantGroups }) {
+export function ParticipantList({
+  participants,
+  canKick = false,
+  onKick,
+}: {
+  participants: ParticipantGroups;
+  canKick?: boolean;
+  onKick?: (participant: ChromeAvatar) => void;
+}) {
   function renderGroup(label: string, entries: ChromeAvatar[]) {
     const onlineEntries = entries.filter((entry) => entry.online !== false);
 
@@ -546,6 +581,16 @@ export function ParticipantList({ participants }: { participants: ParticipantGro
               <span className="min-w-0 truncate">{a.name}</span>
               {a.isHost && <span className="ml-auto shrink-0 text-[8px] text-[#217346]">방장</span>}
               {a.isTurn && <span className={`${a.isHost ? "" : "ml-auto"} shrink-0 text-[8px] text-[#217346]`}>현재 차례</span>}
+              {canKick && !a.isHost && onKick && (
+                <button
+                  type="button"
+                  aria-label={`${a.name} 추방`}
+                  onClick={() => onKick(a)}
+                  className="ml-auto shrink-0 rounded-sm border border-[#d9534f] px-1 py-0.5 text-[8px] text-[#c0392b] hover:bg-[#fdecea]"
+                >
+                  추방
+                </button>
+              )}
             </div>
           ))
         ) : (
@@ -668,11 +713,13 @@ const RIBBON_TOOLBAR_SCALE = 1.1;
 const zoomStyle = { zoom: EXCEL_FHD_ZOOM } as React.CSSProperties;
 
 export function SettingsDropdown({
+  onDocumentSettings,
   onStartGame,
   startLabel = "게임 시작",
   onRestart,
   onLeave,
 }: {
+  onDocumentSettings?: () => void;
   onStartGame?: () => void;
   startLabel?: string;
   onRestart?: () => void;
@@ -680,6 +727,11 @@ export function SettingsDropdown({
 }) {
   return (
     <div className="absolute right-0 top-[26px] z-50 flex flex-col items-stretch bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1 w-[140px] text-[11px] text-[#333]">
+      {onDocumentSettings && (
+        <button onClick={onDocumentSettings} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
+          문서 설정
+        </button>
+      )}
       {onStartGame && (
         <button onClick={onStartGame} className="block w-full text-left px-3 py-1.5 hover:bg-[#f0f0f0]">
           {startLabel}
@@ -818,6 +870,7 @@ export function ExcelChrome({
   avatars,
   profileAvatar,
   profileStats,
+  profileGames,
   participants,
   statusLabel = "편집 중",
   onStatusClick,
@@ -829,14 +882,18 @@ export function ExcelChrome({
   rematchLabel,
   onRematch,
   onStartGame,
+  onDocumentSettings,
   startActionLabel = "게임 시작",
   onRestart,
   onLeave,
+  canKickParticipants = false,
+  onKickParticipant,
   timerSeconds,
   onOpenChat,
   onRequestUndo,
   onRequestDraw,
   sensitiveMode = false,
+  onlyActiveGameTab = false,
   onToggleSensitivity,
   drawingColor = "#c00",
   onDrawingColorChange,
@@ -847,12 +904,14 @@ export function ExcelChrome({
   eraserWidth = 1,
   onEraserWidthChange,
   onClearDrawing,
+  showSeotdaRanks = false,
   children,
 }: {
   fileName: string;
   avatars: ChromeAvatar[];
   profileAvatar?: ChromeAvatar;
   profileStats?: Record<string, GameStats>;
+  profileGames?: GameTab[];
   participants?: ParticipantGroups;
   statusLabel?: string;
   onStatusClick?: () => void;
@@ -864,14 +923,18 @@ export function ExcelChrome({
   rematchLabel?: string;
   onRematch?: () => void;
   onStartGame?: () => void;
+  onDocumentSettings?: () => void;
   startActionLabel?: string;
   onRestart?: () => void;
   onLeave?: () => void;
+  canKickParticipants?: boolean;
+  onKickParticipant?: (participant: ChromeAvatar) => void;
   timerSeconds?: number | null;
   onOpenChat?: () => void;
   onRequestUndo?: () => void;
   onRequestDraw?: () => void;
   sensitiveMode?: boolean;
+  onlyActiveGameTab?: boolean;
   onToggleSensitivity?: () => void;
   drawingColor?: string;
   onDrawingColorChange?: (color: string) => void;
@@ -882,6 +945,7 @@ export function ExcelChrome({
   eraserWidth?: number;
   onEraserWidthChange?: (width: number) => void;
   onClearDrawing?: () => void;
+  showSeotdaRanks?: boolean;
   children: React.ReactNode;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -891,6 +955,7 @@ export function ExcelChrome({
   const [eraserOpen, setEraserOpen] = useState(false);
   const [avatarTooltip, setAvatarTooltip] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [seotdaRanksOpen, setSeotdaRanksOpen] = useState(false);
 
   // The add-ins button lives inside the fixed-width ribbon toolbar row, which
   // clips overflow, so a dropdown nested inside it gets clipped instead of
@@ -902,8 +967,10 @@ export function ExcelChrome({
   const [fontColorPos, setFontColorPos] = useState<{ top: number; left: number } | null>(null);
   const eraserButtonRef = useRef<HTMLButtonElement>(null);
   const editEraserButtonRef = useRef<HTMLButtonElement>(null);
+  const seotdaRanksButtonRef = useRef<HTMLButtonElement>(null);
   const [eraserPos, setEraserPos] = useState<{ top: number; left: number } | null>(null);
   const [eraserAnchor, setEraserAnchor] = useState<"toolbar" | "edit">("toolbar");
+  const [seotdaRanksPos, setSeotdaRanksPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (addinsOpen && addinsButtonRef.current) {
@@ -927,9 +994,17 @@ export function ExcelChrome({
     }
   }, [eraserOpen, eraserAnchor]);
 
+  useEffect(() => {
+    if (seotdaRanksOpen && showSeotdaRanks && seotdaRanksButtonRef.current) {
+      const rect = seotdaRanksButtonRef.current.getBoundingClientRect();
+      setSeotdaRanksPos({ top: rect.bottom + 6, left: rect.left });
+    }
+  }, [seotdaRanksOpen, showSeotdaRanks]);
+
   const displayParticipants = participants ? getParticipantGroupsForGame(activeGameId, participants) : undefined;
   const displayAvatars = displayParticipants?.players ?? avatars;
   const profile = profileAvatar ?? displayAvatars[0];
+  const visibleGames = onlyActiveGameTab ? games.filter((game) => game.id === activeGameId) : games;
 
   return (
     <div
@@ -968,10 +1043,18 @@ export function ExcelChrome({
             >
               <GearIcon />
             </button>
-            {settingsOpen && (onStartGame || onRestart || onLeave) && (
+            {settingsOpen && (onDocumentSettings || onStartGame || onRestart || onLeave) && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setSettingsOpen(false)} />
                 <SettingsDropdown
+                  onDocumentSettings={
+                    onDocumentSettings
+                      ? () => {
+                          setSettingsOpen(false);
+                          onDocumentSettings();
+                        }
+                      : undefined
+                  }
                   onStartGame={
                     onStartGame
                       ? () => {
@@ -1018,7 +1101,7 @@ export function ExcelChrome({
                   <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
                   <ProfileStatsDropdown
                     name={profile.name}
-                    games={games}
+                    games={profileGames ?? games}
                     stats={profileStats ?? {}}
                     onClose={() => setProfileOpen(false)}
                   />
@@ -1067,7 +1150,11 @@ export function ExcelChrome({
                 <div className="absolute right-0 top-[22px] z-50 bg-white border border-[#d0d0d0] rounded-sm shadow-md py-1.5 px-2 w-[150px] text-[10px] text-[#333]">
                   <div className="text-[9px] text-[#999] px-1 pb-1">현재 참여자</div>
                   {displayParticipants ? (
-                    <ParticipantList participants={displayParticipants} />
+                    <ParticipantList
+                      participants={displayParticipants}
+                      canKick={canKickParticipants}
+                      onKick={onKickParticipant}
+                    />
                   ) : (
                     displayAvatars.map((a) => (
                       <div key={a.id ?? a.name} className="flex items-center gap-1.5 px-1 py-0.5">
@@ -1094,7 +1181,7 @@ export function ExcelChrome({
               onClick={onStatusClick}
               attention={statusLabel === "대기 중" && Boolean(onStatusClick)}
             />
-            <TopBtn icon={<ShieldIcon />} label="민감도" />
+            <TopBtn icon={<ShieldIcon />} label="민감도" onClick={onToggleSensitivity} />
             <Chevron />
             <div className="relative ml-1 shrink-0">
               <button
@@ -1372,7 +1459,24 @@ export function ExcelChrome({
               </div>
               <div className="flex flex-col gap-[3px]">
                 <StackBtn label="정렬 및 필터" icon={<FunnelIcon />} />
-                <StackBtn label="찾기 및 선택" icon={<SearchIconSmall />} />
+                <div>
+                  <StackBtn
+                    label="찾기 및 선택"
+                    icon={<SearchIconSmall />}
+                    onClick={showSeotdaRanks ? () => setSeotdaRanksOpen((open) => !open) : undefined}
+                    buttonRef={showSeotdaRanks ? seotdaRanksButtonRef : undefined}
+                    selected={showSeotdaRanks && seotdaRanksOpen}
+                  />
+                  {showSeotdaRanks && seotdaRanksOpen && seotdaRanksPos && createPortal(
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setSeotdaRanksOpen(false)} />
+                      <div className="fixed z-50" style={{ top: seotdaRanksPos.top, left: seotdaRanksPos.left }}>
+                        <SeotdaHandRankTooltip />
+                      </div>
+                    </>,
+                    document.body,
+                  )}
+                </div>
               </div>
             </div>
             <GroupLabel>편집</GroupLabel>
@@ -1443,7 +1547,7 @@ export function ExcelChrome({
               IT 운영 현황
             </span>
           ) : (
-            games.map((g) => (
+            visibleGames.map((g) => (
               <button
                 key={g.id}
                 onClick={() => onSelectGame(g.id)}

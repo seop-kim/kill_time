@@ -1,5 +1,51 @@
 "use client";
 
+export function NicknameSetupCard({
+  name,
+  busy,
+  onNameChange,
+  onContinue,
+}: {
+  name: string;
+  busy: boolean;
+  onNameChange: (value: string) => void;
+  onContinue: () => void;
+}) {
+  return (
+    <div className="w-[384px] bg-white border border-[#d0d0d0] rounded-sm shadow-sm">
+      <div className="border-b border-[#e0e0e0] px-5 py-3">
+        <h1 className="text-[15px] font-semibold text-[#333]">Kill Time</h1>
+      </div>
+      <form
+        className="px-5 py-4 flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onContinue();
+        }}
+      >
+        <label className="flex flex-col gap-1">
+          <span className="text-[12px] text-[#555]">표시 이름</span>
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+            maxLength={8}
+            placeholder="예: 김철수"
+            className="border border-[#c8c8c8] rounded-sm px-2 py-1.5 text-[13px] outline-none focus:border-[#217346]"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={busy}
+          className="bg-[#217346] hover:bg-[#1a5c38] disabled:opacity-60 text-white text-[13px] rounded-sm py-2"
+        >
+          시작하기
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export function HomeAccessCard({
   name,
   busy,

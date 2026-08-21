@@ -13,6 +13,7 @@ import {
   ParticipantList,
   ProfileStatsDropdown,
   ShareDropdown,
+  SeotdaHandRankTooltip,
   SettingsDropdown,
   StartGameConfirmDialog,
 } from "./ExcelChrome";
@@ -41,6 +42,28 @@ describe("ExcelChrome", () => {
     expect(rootClass).toMatch(/\boverflow-hidden\b/);
     expect(rootClass).not.toMatch(/\bh-screen\b/);
     expect(markup).toContain("통합 문서 통계");
+  });
+
+  it("can show only the active game in a room sheet tab", () => {
+    const markup = renderToStaticMarkup(
+      <ExcelChrome
+        fileName="room.xlsx"
+        avatars={[]}
+        onShare={() => {}}
+        games={[
+          { id: "omok", label: "Omok", available: true },
+          { id: "girin", label: "girin", available: true },
+        ]}
+        activeGameId="girin"
+        onSelectGame={() => {}}
+        onlyActiveGameTab
+      >
+        <div>cell area</div>
+      </ExcelChrome>,
+    );
+
+    expect(markup).toContain(">girin</button>");
+    expect(markup).not.toContain(">Omok</button>");
   });
 
   it("keeps a fixed FHD canvas so narrow windows clip instead of reflowing the chrome", () => {
@@ -83,12 +106,13 @@ describe("ExcelChrome", () => {
 
   it("keeps both settings actions inside one vertical dropdown", () => {
     const markup = renderToStaticMarkup(
-      <SettingsDropdown onStartGame={() => {}} onRestart={() => {}} onLeave={() => {}} />,
+      <SettingsDropdown onStartGame={() => {}} onRestart={() => {}} onLeave={() => {}} onDocumentSettings={() => {}} />,
     );
 
     expect(markup).toContain("flex flex-col items-stretch");
     expect(markup).toContain("게임 시작");
     expect(markup.indexOf("게임 다시 시작")).toBeLessThan(markup.indexOf("방 나가기"));
+    expect(markup).toContain("문서 설정");
   });
 
   it("places the Copilot launcher beside Add-ins", () => {
@@ -259,6 +283,26 @@ describe("ExcelChrome", () => {
     expect(participantMarkup).not.toContain("옵저버");
   });
 
+  it("renders host-only kick actions when participant removal is enabled", () => {
+    const participantMarkup = renderToStaticMarkup(
+      <ParticipantList
+        participants={{
+          players: [
+            { id: "host", name: "Host", color: "#217346", isTurn: false, isHost: true },
+            { id: "guest", name: "Guest", color: "#e4693f", isTurn: false },
+          ],
+          observers: [],
+        }}
+        canKick
+        onKick={() => {}}
+      />,
+    );
+
+    expect(participantMarkup).toContain("Guest 추방");
+    expect(participantMarkup).toContain("추방");
+    expect(participantMarkup).not.toContain("Host 추방");
+  });
+
   it("shows the current turn time beside 따라잡기", () => {
     const markup = renderToStaticMarkup(
       <ExcelChrome
@@ -379,6 +423,17 @@ describe("ExcelChrome", () => {
     expect(markup).toContain("Omok");
     expect(markup).toContain("2승");
     expect(markup).toContain("1패");
+  });
+
+  it("provides the Seotda hand-ranking tooltip content", () => {
+    const markup = renderToStaticMarkup(<SeotdaHandRankTooltip />);
+
+    expect(markup).toContain('role="tooltip"');
+    expect(markup).toContain("Up 족보");
+    expect(markup).toContain("38광땡");
+    expect(markup).toContain("10땡");
+    expect(markup).toContain("알리");
+    expect(markup).toContain("9끗");
   });
 
   it("shows girin quiz records with its own metrics", () => {

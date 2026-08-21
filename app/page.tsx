@@ -2,18 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH } from "@/lib/rooms";
-import { getOrCreateUserId, saveIdentity } from "@/lib/identity";
+import { getOrCreateUserId, loadNickname, saveNickname } from "@/lib/identity";
+import { saveProfileNickname } from "@/lib/profile";
+import { ensureWallet } from "@/lib/wallet";
 import { useToast } from "@/components/Toast";
-import { DocumentJoinDialog, HomeAccessCard } from "@/components/HomeAccess";
+import { NicknameSetupCard } from "@/components/HomeAccess";
 
 export default function Home() {
   const router = useRouter();
   const showToast = useToast();
 
-  const [name, setName] = useState("");
-  const [roomCode, setRoomCode] = useState("");
-  const [joinOpen, setJoinOpen] = useState(false);
+  const [name, setName] = useState(() => loadNickname());
   const [busy, setBusy] = useState(false);
 
   function validName(): boolean {
@@ -25,48 +24,17 @@ export default function Home() {
     return true;
   }
 
-  async function handleCreate() {
+  async function handleContinue() {
     if (!validName() || busy) return;
     setBusy(true);
     try {
-      const code = await createRoom(name.trim());
-      saveIdentity(code, { role: "host", name: name.trim(), userId: getOrCreateUserId() });
-      router.push(`/room/${code}`);
+      const nickname = name.trim();
+      const userId = getOrCreateUserId();
+      saveNickname(nickname);
+      await Promise.all([saveProfileNickname(userId, nickname), ensureWallet(userId)]);
+      router.push("/workspace");
     } catch {
-      showToast("문서를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleJoin() {
-    if (!validName() || busy) return;
-    const code = normalizeRoomCode(roomCode);
-    if (code.length !== ROOM_CODE_LENGTH) {
-      showToast(`문서 ID는 ${ROOM_CODE_LENGTH}자입니다.`, "error");
-      return;
-    }
-    setBusy(true);
-    try {
-      const result = await joinRoom(code, name.trim());
-      if (!result.ok) {
-        if (result.reason === "not-found") {
-          router.push(`/room/${code}`);
-          return;
-        }
-        showToast("이미 인원이 가득한 문서입니다.", "error");
-        return;
-      }
-      saveIdentity(code, {
-        role: result.role,
-        name: name.trim(),
-        participantId: result.participantId,
-        userId: getOrCreateUserId(),
-      });
-      setJoinOpen(false);
-      router.push(`/room/${code}`);
-    } catch {
-      showToast("문서를 여는 중 문제가 발생했습니다.", "error");
+      showToast("사용자 정보를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
     } finally {
       setBusy(false);
     }
@@ -74,21 +42,11 @@ export default function Home() {
 
   return (
     <div className="flex-1 flex items-center justify-center px-4">
-      <HomeAccessCard
+      <NicknameSetupCard
         name={name}
         busy={busy}
         onNameChange={setName}
-        onCreate={handleCreate}
-        onOpenJoin={() => setJoinOpen(true)}
-      />
-      <DocumentJoinDialog
-        open={joinOpen}
-        roomCode={roomCode}
-        busy={busy}
-        onChange={setRoomCode}
-        onClose={() => setJoinOpen(false)}
-        onJoin={handleJoin}
-        roomCodeLength={ROOM_CODE_LENGTH}
+        onContinue={handleContinue}
       />
     </div>
   );
