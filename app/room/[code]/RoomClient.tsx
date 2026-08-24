@@ -66,7 +66,8 @@ import {
   type GirinGame,
 } from "@/lib/girin";
 import { getGirinCoinReward, getOmokCoinReward } from "@/lib/economy";
-import { getWalletForAction, settleCoinReward, subscribeWallet } from "@/lib/wallet";
+import { exchangeCoinMoney, getWalletForAction, settleCoinReward, subscribeWallet, type WalletProfile } from "@/lib/wallet";
+import { QuickExchangeDialog } from "@/components/QuickExchangeDialog";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
   recordGameResult,
@@ -174,6 +175,9 @@ export default function RoomClient({ code }: { code: string }) {
   const [dbError, setDbError] = useState(false);
   const [joinName, setJoinName] = useState("");
   const [joining, setJoining] = useState(false);
+  const [quickExchangeOpen, setQuickExchangeOpen] = useState(false);
+  const [quickExchangeWallet, setQuickExchangeWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
+  const [quickExchangeBusy, setQuickExchangeBusy] = useState(false);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -703,6 +707,26 @@ export default function RoomClient({ code }: { code: string }) {
 
   const board = useMemo(() => room?.board ?? {}, [room]);
 
+  async function attemptJoinAsGuest(userId: string, trimmed: string) {
+    const currentWallet = await getWalletForAction(userId);
+    const result = await joinRoom(code, trimmed, currentWallet.money, userId);
+    if (!result.ok) {
+      if (result.reason === "insufficient-funds") {
+        setQuickExchangeWallet(currentWallet);
+        setQuickExchangeOpen(true);
+        return;
+      }
+      showToast(
+        result.reason === "not-found" ? "문서를 찾을 수 없습니다." : "이미 인원이 가득한 문서입니다.",
+        "error",
+      );
+      return;
+    }
+    setQuickExchangeOpen(false);
+    saveIdentity(code, { role: result.role, name: trimmed, participantId: result.participantId, userId });
+    setIdentity({ role: result.role, name: trimmed, participantId: result.participantId, userId });
+  }
+
   async function handleJoinAsGuest() {
     const trimmed = joinName.trim();
     if (trimmed.length < 2 || trimmed.length > 8) {
@@ -711,24 +735,23 @@ export default function RoomClient({ code }: { code: string }) {
     }
     setJoining(true);
     try {
-      const userId = getOrCreateUserId();
-      const currentWallet = await getWalletForAction(userId);
-      const result = await joinRoom(code, trimmed, currentWallet.money, userId);
-      if (!result.ok) {
-        showToast(
-          result.reason === "not-found"
-            ? "문서를 찾을 수 없습니다."
-            : result.reason === "insufficient-funds"
-              ? "Up 판돈보다 머니가 부족해 입장할 수 없습니다."
-              : "이미 인원이 가득한 문서입니다.",
-          "error",
-        );
-        return;
-      }
-      saveIdentity(code, { role: result.role, name: trimmed, participantId: result.participantId, userId });
-      setIdentity({ role: result.role, name: trimmed, participantId: result.participantId, userId });
+      await attemptJoinAsGuest(getOrCreateUserId(), trimmed);
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function handleQuickExchangeConfirm(coinAmount: number) {
+    const userId = getOrCreateUserId();
+    const trimmed = joinName.trim();
+    setQuickExchangeBusy(true);
+    try {
+      await exchangeCoinMoney(userId, "coinToMoney", coinAmount);
+      await attemptJoinAsGuest(userId, trimmed);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "환전을 처리하지 못했습니다.", "error");
+    } finally {
+      setQuickExchangeBusy(false);
     }
   }
 
@@ -1456,6 +1479,16 @@ export default function RoomClient({ code }: { code: string }) {
             : "두 명이 대진에 참여하면 자동으로 게임이 시작됩니다."
         }
         confirmLabel={activeGameId === "girin" || activeGameId === "seotda" ? "시작" : "참여하기"}
+      />
+
+      <QuickExchangeDialog
+        open={quickExchangeOpen}
+        wallet={quickExchangeWallet}
+        requiredMoney={room?.moneyStake ?? SEOTDA_STAKE_MIN}
+        busy={quickExchangeBusy}
+        confirmLabel="교환하고 입장"
+        onClose={() => setQuickExchangeOpen(false)}
+        onExchange={handleQuickExchangeConfirm}
       />
 
       <DocumentSettingsDialog
