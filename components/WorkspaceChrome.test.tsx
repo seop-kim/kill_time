@@ -34,7 +34,7 @@ describe("WorkspaceChrome", () => {
   });
 
   it("uses the playable games for profile records instead of workspace sheets", () => {
-    expect(WORKSPACE_PROFILE_GAMES.map((game) => game.id)).toEqual(["omok", "girin", "seotda"]);
-    expect(WORKSPACE_PROFILE_GAMES.map((game) => game.label)).toEqual(["Omok", "girin", "Up"]);
+    expect(WORKSPACE_PROFILE_GAMES.map((game) => game.id)).toEqual(["omok", "girin", "seotda", "minesweeper"]);
+    expect(WORKSPACE_PROFILE_GAMES.map((game) => game.label)).toEqual(["Omok", "girin", "Up", "지뢰찾기"]);
   });
 });

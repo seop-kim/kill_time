@@ -60,6 +60,7 @@ export function DocumentSettingsDialog({
               <option value="omok">오목</option>
               <option value="girin">내가 그린 기린 그림</option>
               <option value="seotda">Up</option>
+              <option value="minesweeper">지뢰찾기</option>
             </select>
           </label>
 

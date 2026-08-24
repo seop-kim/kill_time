@@ -22,6 +22,7 @@ describe("DocumentSettingsDialog", () => {
     expect(markup).toContain("오목");
     expect(markup).toContain("기린");
     expect(markup).toContain("Up");
+    expect(markup).toContain("지뢰찾기");
     expect(markup).toContain("판돈");
     expect(markup).toContain("1000000");
     expect(markup).toContain("10,000");
