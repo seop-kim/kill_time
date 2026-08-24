@@ -115,6 +115,34 @@ export function applyGirinQuizResult(
   return next;
 }
 
+/**
+ * Merges the stats delta into the *raw* profile record instead of replacing
+ * it outright. A Firebase transaction return value replaces the whole node,
+ * and `applyGameResult`/`applyGirinQuizResult` only know about stats fields
+ * — returning their result directly would silently wipe unrelated sibling
+ * fields (wallet, walletSettlements, attendance, seotdaStakes, ...).
+ */
+export function mergeGameResultIntoProfile(
+  current: unknown,
+  gameId: string,
+  result: GameResult,
+  resultId: string,
+  nickname?: string,
+): Record<string, unknown> {
+  const rawProfile = current && typeof current === "object" ? (current as Record<string, unknown>) : {};
+  return { ...rawProfile, ...applyGameResult(current as UserStatsProfile | null, gameId, result, resultId, nickname) };
+}
+
+export function mergeGirinQuizResultIntoProfile(
+  current: unknown,
+  resultId: string,
+  delta: GirinQuizStatsDelta,
+  nickname?: string,
+): Record<string, unknown> {
+  const rawProfile = current && typeof current === "object" ? (current as Record<string, unknown>) : {};
+  return { ...rawProfile, ...applyGirinQuizResult(current as UserStatsProfile | null, resultId, delta, nickname) };
+}
+
 export async function recordGameResult(
   userId: string,
   nickname: string,
@@ -123,7 +151,7 @@ export async function recordGameResult(
   resultId: string,
 ): Promise<void> {
   await runTransaction(ref(getDb(), `profiles/${userId}`), (current) =>
-    applyGameResult(current as UserStatsProfile | null, gameId, result, resultId, nickname),
+    mergeGameResultIntoProfile(current, gameId, result, resultId, nickname),
   );
 }
 
@@ -134,7 +162,7 @@ export async function recordGirinQuizResult(
   delta: GirinQuizStatsDelta,
 ): Promise<void> {
   await runTransaction(ref(getDb(), `profiles/${userId}`), (current) =>
-    applyGirinQuizResult(current as UserStatsProfile | null, resultId, delta, nickname),
+    mergeGirinQuizResultIntoProfile(current, resultId, delta, nickname),
   );
 }
 
