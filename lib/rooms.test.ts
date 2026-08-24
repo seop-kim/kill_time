@@ -519,6 +519,32 @@ describe("room game selection", () => {
     expect(() => applyRoomGameSettings(room, "seotda", 0)).toThrow();
   });
 
+  it("returns a finished room to waiting when selecting Minesweeper", () => {
+    const room: Room = {
+      gameId: "omok",
+      host: { name: "Host" },
+      guest: { id: "guest", name: "Guest" },
+      blackPlayer: "host",
+      turn: "white",
+      status: "finished",
+      winner: "black",
+      lastMove: { row: 7, col: 8 },
+      board: { "7:8": "black" },
+      gameStartedAt: 100,
+    };
+
+    const selected = applyRoomGameSettings(room, "minesweeper");
+
+    expect(selected).toMatchObject({
+      gameId: "minesweeper",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    });
+    expect(selected.board).toBeUndefined();
+    expect(selected.gameStartedAt).toBeUndefined();
+  });
+
   it("does not change the game or stake after a room starts playing", () => {
     const room: Room = {
       host: { name: "Host" },

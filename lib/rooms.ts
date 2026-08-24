@@ -157,11 +157,29 @@ export function applyRoomGameSettings(
 ): Room {
   if (room.status === "playing") return room;
 
-  if (gameId === "seotda") {
-    return { ...room, gameId, moneyStake: normalizeSeotdaStake(moneyStake) };
+  const nextRoom: Room = { ...room, gameId };
+  if (room.status === "finished") {
+    nextRoom.status = "waiting";
+    nextRoom.winner = null;
+    nextRoom.lastMove = null;
+    nextRoom.turn = "black";
+    nextRoom.blackPlayer = "host";
+    nextRoom.turnStartedAt = Date.now();
+    nextRoom.undoRequest = null;
+    nextRoom.drawRequest = null;
+    delete nextRoom.board;
+    delete nextRoom.gameStartedAt;
+    delete nextRoom.seotdaGame;
+    delete nextRoom.girinGame;
+    delete nextRoom.minesweeperGame;
+    delete nextRoom.matchRequests;
+    delete nextRoom.gamePlayers;
   }
 
-  const nextRoom = { ...room, gameId };
+  if (gameId === "seotda") {
+    return { ...nextRoom, moneyStake: normalizeSeotdaStake(moneyStake) };
+  }
+
   delete nextRoom.moneyStake;
   if (gameId !== "minesweeper") delete nextRoom.minesweeperGame;
   return nextRoom;
