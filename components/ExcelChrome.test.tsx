@@ -121,6 +121,7 @@ describe("ExcelChrome", () => {
     expect(markup).toContain('aria-label="코파일럿 열기"');
     expect(markup).toContain("코파일럿");
     expect(markup).toContain("copilot-icon.png");
+    expect(markup).toContain("height:auto");
     expect(markup).toContain("w-[44px]");
     expect(markup).not.toContain("w-[54px]");
     expect(markup).not.toContain("w-[58px]");

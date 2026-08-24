@@ -145,7 +145,7 @@ const RIBBON_ACTION_CLASS =
   "flex h-[42px] w-[44px] flex-col items-center justify-center gap-0.5 text-[9px] text-[#555] hover:bg-[#e8e8e8] rounded-[2px] px-1";
 
 function CopilotIcon() {
-  return <Image src="/copilot-icon.png" alt="" width={14} height={14} priority className="shrink-0 object-contain" />;
+  return <Image src="/copilot-icon.png" alt="" width={14} height={14} priority className="shrink-0 object-contain" style={{ width: 14, height: "auto" }} />;
 }
 const CommentIcon = () => (
   <Icon>

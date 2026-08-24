@@ -4,6 +4,12 @@ import { canAffordSeotdaStake, normalizeSeotdaStake, SEOTDA_STAKE_MIN } from "./
 import { cellKey, type Board, type Stone } from "./gomoku";
 import { finishGirinGameIfSolo, type GirinGame } from "./girin";
 import {
+  createMinesweeperGame,
+  openMinesweeperCell,
+  toggleMinesweeperFlag,
+  type MinesweeperGame,
+} from "./minesweeper";
+import {
   applySeotdaAction,
   createSeotdaGame,
   getSeotdaPayouts,
@@ -16,7 +22,7 @@ import { getWallet, lockSeotdaStake, settleSeotdaMatch } from "./wallet";
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
-export type RoomGameId = "omok" | "girin" | "seotda";
+export type RoomGameId = "omok" | "girin" | "seotda" | "minesweeper";
 
 export interface Player {
   id?: string;
@@ -98,6 +104,7 @@ export interface Room {
   moneyStake?: number;
   seotdaGame?: SeotdaGame;
   girinGame?: GirinGame;
+  minesweeperGame?: MinesweeperGame;
   undoRequest?: PlayerRole | null;
   drawRequest?: PlayerRole | null;
   presence?: { host?: boolean; guest?: boolean; spectators?: Record<string, boolean> };
@@ -117,7 +124,7 @@ export const DISCONNECT_GRACE_MS = 15000;
 export const PARTICIPANT_REMOVAL_GRACE_MS = 20000;
 
 export function normalizeRoomGameId(value: unknown): RoomGameId {
-  if (value === "girin" || value === "seotda") return value;
+  if (value === "girin" || value === "seotda" || value === "minesweeper") return value;
   return "omok";
 }
 
@@ -127,6 +134,16 @@ export function canEnterRoomWithWallet(
 ): boolean {
   if (room.gameId !== "seotda") return true;
   return canAffordSeotdaStake(money, room.moneyStake ?? SEOTDA_STAKE_MIN);
+}
+
+export type JoinFailureReason = "not-found" | "full" | "insufficient-funds" | "solo-only";
+
+export function getRoomJoinRejectionReason(
+  room: Pick<Room, "gameId" | "moneyStake">,
+  money: number,
+): Exclude<JoinFailureReason, "not-found" | "full"> | null {
+  if (room.gameId === "minesweeper") return "solo-only";
+  return canEnterRoomWithWallet(room, money) ? null : "insufficient-funds";
 }
 
 export function applyRoomGameSelection(room: Room, gameId: RoomGameId): Room {
@@ -140,12 +157,31 @@ export function applyRoomGameSettings(
 ): Room {
   if (room.status === "playing") return room;
 
-  if (gameId === "seotda") {
-    return { ...room, gameId, moneyStake: normalizeSeotdaStake(moneyStake) };
+  const nextRoom: Room = { ...room, gameId };
+  if (room.status === "finished") {
+    nextRoom.status = "waiting";
+    nextRoom.winner = null;
+    nextRoom.lastMove = null;
+    nextRoom.turn = "black";
+    nextRoom.blackPlayer = "host";
+    nextRoom.turnStartedAt = Date.now();
+    nextRoom.undoRequest = null;
+    nextRoom.drawRequest = null;
+    delete nextRoom.board;
+    delete nextRoom.gameStartedAt;
+    delete nextRoom.seotdaGame;
+    delete nextRoom.girinGame;
+    delete nextRoom.minesweeperGame;
+    delete nextRoom.matchRequests;
+    delete nextRoom.gamePlayers;
   }
 
-  const nextRoom = { ...room, gameId };
+  if (gameId === "seotda") {
+    return { ...nextRoom, moneyStake: normalizeSeotdaStake(moneyStake) };
+  }
+
   delete nextRoom.moneyStake;
+  if (gameId !== "minesweeper") delete nextRoom.minesweeperGame;
   return nextRoom;
 }
 
@@ -161,6 +197,53 @@ export function resetSeotdaGame(room: Room): Room {
   delete nextRoom.seotdaGame;
   delete nextRoom.gameStartedAt;
   return nextRoom;
+}
+
+export function startMinesweeperRoom(room: Room, matchId: string, seed: number, now = Date.now()): Room {
+  if (room.gameId !== "minesweeper" || room.status !== "waiting") return room;
+  const nextRoom: Room = {
+    ...room,
+    status: "playing",
+    winner: null,
+    lastMove: null,
+    gameStartedAt: now,
+    turnStartedAt: now,
+    minesweeperGame: createMinesweeperGame(matchId, seed, now),
+  };
+  delete nextRoom.board;
+  delete nextRoom.seotdaGame;
+  delete nextRoom.girinGame;
+  delete nextRoom.matchRequests;
+  delete nextRoom.gamePlayers;
+  return nextRoom;
+}
+
+export function applyMinesweeperOpen(
+  room: Room,
+  actorId: string,
+  row: number,
+  col: number,
+  now = Date.now(),
+): Room {
+  const hostId = room.host.id ?? "host";
+  if (room.gameId !== "minesweeper" || room.status !== "playing" || actorId !== hostId || !room.minesweeperGame) return room;
+  const minesweeperGame = openMinesweeperCell(room.minesweeperGame, row, col, now);
+  return {
+    ...room,
+    minesweeperGame,
+    status: minesweeperGame.status === "playing" ? "playing" : "finished",
+  };
+}
+
+export function applyMinesweeperFlag(room: Room, actorId: string, row: number, col: number): Room {
+  const hostId = room.host.id ?? "host";
+  if (room.gameId !== "minesweeper" || room.status !== "playing" || actorId !== hostId || !room.minesweeperGame) return room;
+  return { ...room, minesweeperGame: toggleMinesweeperFlag(room.minesweeperGame, row, col) };
+}
+
+export function resetMinesweeperRoom(room: Room, matchId: string, seed: number, now = Date.now()): Room {
+  if (room.gameId !== "minesweeper" || room.status !== "finished") return room;
+  return startMinesweeperRoom({ ...room, status: "waiting" }, matchId, seed, now);
 }
 
 // no 0/O/1/I — easy to misread when typed in by hand
@@ -535,6 +618,45 @@ function roomRef(code: string) {
   return ref(getDb(), `rooms/${code}`);
 }
 
+function createMinesweeperMatchId(now: number): string {
+  return `minesweeper-${now}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createMinesweeperSeed(): number {
+  return Math.max(1, Math.floor(Math.random() * 4_294_967_295));
+}
+
+export async function startMinesweeperGame(code: string, now = Date.now()): Promise<void> {
+  const matchId = createMinesweeperMatchId(now);
+  const seed = createMinesweeperSeed();
+  await runTransaction(roomRef(code), (room: Room | null) => (room ? startMinesweeperRoom(room, matchId, seed, now) : room));
+}
+
+export async function openMinesweeperCellInRoom(
+  code: string,
+  actorId: string,
+  row: number,
+  col: number,
+  now = Date.now(),
+): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => (room ? applyMinesweeperOpen(room, actorId, row, col, now) : room));
+}
+
+export async function toggleMinesweeperFlagInRoom(
+  code: string,
+  actorId: string,
+  row: number,
+  col: number,
+): Promise<void> {
+  await runTransaction(roomRef(code), (room: Room | null) => (room ? applyMinesweeperFlag(room, actorId, row, col) : room));
+}
+
+export async function resetMinesweeperGame(code: string, now = Date.now()): Promise<void> {
+  const matchId = createMinesweeperMatchId(now);
+  const seed = createMinesweeperSeed();
+  await runTransaction(roomRef(code), (room: Room | null) => (room ? resetMinesweeperRoom(room, matchId, seed, now) : room));
+}
+
 export async function setRoomGame(code: string, gameId: RoomGameId): Promise<void> {
   await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room) return room;
@@ -607,7 +729,7 @@ export async function createRoom(
 export type JoinResult =
   | { ok: true; role: "guest"; participantId: string }
   | { ok: true; role: "spectator"; participantId: string }
-  | { ok: false; reason: "not-found" | "full" | "insufficient-funds" };
+  | { ok: false; reason: JoinFailureReason };
 
 export async function joinRoom(code: string, guestName: string, walletMoney = 0, userId?: string): Promise<JoinResult> {
   const participantId = generateParticipantId();
@@ -615,8 +737,9 @@ export async function joinRoom(code: string, guestName: string, walletMoney = 0,
   const transaction = await runTransaction(roomRef(code), (currentRoom: Room | null) => {
     if (!currentRoom) return currentRoom;
 
-    if (!canEnterRoomWithWallet(currentRoom, walletMoney)) {
-      result = { ok: false, reason: "insufficient-funds" };
+    const joinRejection = getRoomJoinRejectionReason(currentRoom, walletMoney);
+    if (joinRejection) {
+      result = { ok: false, reason: joinRejection };
       return currentRoom;
     }
     if (isRoomFull(currentRoom)) {

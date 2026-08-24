@@ -17,10 +17,14 @@ import {
   finishSoloGirinInRoom,
   buildChatLogUpdates,
   canEnterRoomWithWallet,
+  applyMinesweeperOpen,
+  getRoomJoinRejectionReason,
   getRoomHostId,
+  resetMinesweeperRoom,
   removeParticipantFromRoom,
   kickParticipantFromRoom,
   ROOM_HOME_PATH,
+  startMinesweeperRoom,
   transferOfflineHost,
   type Room,
 } from "./rooms";
@@ -39,6 +43,50 @@ describe("Seotda room entry", () => {
     expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 9_999)).toBe(false);
     expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 10_000)).toBe(true);
     expect(canEnterRoomWithWallet({ gameId: "omok" }, 0)).toBe(true);
+  });
+});
+
+describe("Minesweeper solo rooms", () => {
+  const soloRoom: Room = {
+    gameId: "minesweeper",
+    host: { id: "host", name: "Host" },
+    guest: null,
+    blackPlayer: "host",
+    turn: "black",
+    status: "waiting",
+    winner: null,
+    lastMove: null,
+  };
+
+  it("rejects every non-host join attempt", () => {
+    expect(getRoomJoinRejectionReason(soloRoom, 0)).toBe("solo-only");
+    expect(normalizeRoomGameId("minesweeper")).toBe("minesweeper");
+  });
+
+  it("starts and restarts a board for the host while rejecting another actor", () => {
+    const started = startMinesweeperRoom(soloRoom, "mine-1", 123, 100);
+    const guestAttempt = applyMinesweeperOpen(started, "guest", 3, 3, 101);
+    const hostOpened = applyMinesweeperOpen(started, "host", 3, 3, 101);
+    const finished: Room = {
+      ...hostOpened,
+      status: "finished",
+      minesweeperGame: { ...hostOpened.minesweeperGame!, status: "won", finishedAt: 102 },
+    };
+    const restarted = resetMinesweeperRoom(finished, "mine-2", 456, 103);
+
+    expect(started.status).toBe("playing");
+    expect(started.minesweeperGame).toMatchObject({ matchId: "mine-1", seed: 123, opened: [] });
+    expect(guestAttempt).toBe(started);
+    expect(hostOpened.minesweeperGame?.opened).toContain("3:3");
+    expect(restarted.status).toBe("playing");
+    expect(restarted.minesweeperGame).toMatchObject({ matchId: "mine-2", seed: 456, opened: [] });
+  });
+
+  it("starts without returning undefined values to Firebase", () => {
+    const started = startMinesweeperRoom(soloRoom, "mine-1", 123, 100);
+
+    expect(started).not.toHaveProperty("board");
+    expect(started.minesweeperGame?.status).toBe("playing");
   });
 });
 
@@ -476,6 +524,32 @@ describe("room game selection", () => {
     expect(selected.gameId).toBe("seotda");
     expect(selected.moneyStake).toBe(50_000);
     expect(() => applyRoomGameSettings(room, "seotda", 0)).toThrow();
+  });
+
+  it("returns a finished room to waiting when selecting Minesweeper", () => {
+    const room: Room = {
+      gameId: "omok",
+      host: { name: "Host" },
+      guest: { id: "guest", name: "Guest" },
+      blackPlayer: "host",
+      turn: "white",
+      status: "finished",
+      winner: "black",
+      lastMove: { row: 7, col: 8 },
+      board: { "7:8": "black" },
+      gameStartedAt: 100,
+    };
+
+    const selected = applyRoomGameSettings(room, "minesweeper");
+
+    expect(selected).toMatchObject({
+      gameId: "minesweeper",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    });
+    expect(selected.board).toBeUndefined();
+    expect(selected.gameStartedAt).toBeUndefined();
   });
 
   it("does not change the game or stake after a room starts playing", () => {

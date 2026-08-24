@@ -11,6 +11,7 @@ export const WORKSPACE_PROFILE_GAMES: GameTab[] = [
   { id: "omok", label: "Omok", available: true },
   { id: "girin", label: "girin", available: true },
   { id: "seotda", label: "Up", available: true },
+  { id: "minesweeper", label: "지뢰찾기", available: true },
 ];
 
 export function WorkspaceChrome({

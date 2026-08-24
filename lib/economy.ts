@@ -6,6 +6,7 @@ export const SEOTDA_STAKE_MAX = 1_000_000;
 export type Currency = "coin" | "money";
 export type OmokRewardResult = "win" | "loss" | "draw";
 export type GirinRewardOutcome = "answered" | "stumped";
+export type MinesweeperRewardOutcome = "won" | "lost";
 
 export interface WalletBalance {
   coin: number;
@@ -84,6 +85,10 @@ export function getOmokCoinReward(result: OmokRewardResult): number {
 
 export function getGirinCoinReward(outcome: GirinRewardOutcome): number {
   return outcome === "answered" ? 200 : 500;
+}
+
+export function getMinesweeperCoinReward(outcome: MinesweeperRewardOutcome): number {
+  return outcome === "won" ? 10 : 0;
 }
 
 export function validateStake(
