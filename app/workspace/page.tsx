@@ -124,6 +124,10 @@ export default function WorkspacePage() {
           showToast("Up 판돈보다 머니가 부족합니다.", "error");
           return;
         }
+        if (result.reason === "solo-only") {
+          showToast("지뢰찾기는 혼자 플레이하는 문서입니다.", "error");
+          return;
+        }
         showToast("이미 인원이 가득한 문서입니다.", "error");
         return;
       }

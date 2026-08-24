@@ -6,6 +6,7 @@ import {
   buildSeotdaEscrow,
   canAffordSeotdaStake,
   getGirinCoinReward,
+  getMinesweeperCoinReward,
   getOmokCoinReward,
   normalizeSeotdaStake,
   SEOTDA_STAKE_MAX,
@@ -35,6 +36,8 @@ describe("economy rules", () => {
     expect(getOmokCoinReward("draw")).toBe(200);
     expect(getGirinCoinReward("answered")).toBe(200);
     expect(getGirinCoinReward("stumped")).toBe(500);
+    expect(getMinesweeperCoinReward("won")).toBe(10);
+    expect(getMinesweeperCoinReward("lost")).toBe(0);
   });
 
   it("rejects the entire stake when any player is short", () => {

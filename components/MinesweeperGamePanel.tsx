@@ -47,7 +47,6 @@ export function MinesweeperGamePanel({
   const openedSet = new Set(game?.opened ?? []);
 
   useEffect(() => {
-    setNow(Date.now());
     if (!isPlaying) return undefined;
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
