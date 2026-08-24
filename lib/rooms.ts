@@ -19,7 +19,7 @@ import {
   type SeotdaActionType,
   type SeotdaGame,
 } from "./seotda";
-import { getWallet, lockSeotdaStake, settleSeotdaMatch } from "./wallet";
+import { getUnsettledSeotdaStakes, getWallet, lockSeotdaStake, settleSeotdaMatch } from "./wallet";
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
@@ -476,7 +476,7 @@ export async function startSeotdaGame(code: string, now = Date.now()): Promise<S
     try {
       for (const participant of seotdaParticipants) {
         const amount = game.players[participant.id].stack;
-        if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, amount, now))) {
+        if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, amount, now, code))) {
           throw new Error("Up 판돈을 잠그지 못했습니다.");
         }
         lockedAmounts[participant.userId] = amount;
@@ -563,6 +563,48 @@ export async function applySeotdaActionToRoom(
 /** Turn-timeout path: calls if the current player can afford it, folds otherwise (see expireSeotdaTurn). */
 export async function expireSeotdaTurnInRoom(code: string, now = Date.now()): Promise<SeotdaGame> {
   return commitSeotdaTransition(code, (game) => expireSeotdaTurn(game, now), now);
+}
+
+/** Stakes younger than this might still be mid-start on another tab of the same lock loop — leave them alone. */
+const ORPHANED_STAKE_GRACE_MS = 2 * 60 * 1000;
+
+/**
+ * Refunds a locked Up stake whose match never actually started or whose
+ * settlement never landed — e.g. the starting client's browser closed
+ * between locking one player and committing the room, or between the room
+ * committing "finished" and settlement completing. Safe to call anytime:
+ * only touches stakes old enough to rule out a match still being set up,
+ * verifies the referenced room's actual state before refunding, and reuses
+ * settleSeotdaMatch's own idempotency, so re-running it is a no-op once a
+ * stake is genuinely settled.
+ */
+export async function reconcileOrphanedSeotdaStakes(userId: string, now = Date.now()): Promise<number> {
+  const unsettled = await getUnsettledSeotdaStakes(userId);
+  let refundedTotal = 0;
+  for (const [matchId, record] of Object.entries(unsettled)) {
+    if (now - record.createdAt < ORPHANED_STAKE_GRACE_MS) continue;
+    if (!record.roomCode) continue; // locked before roomCode was tracked — nothing to safely verify against
+
+    const snapshot = await get(roomRef(record.roomCode));
+    const room = snapshot.exists() ? (snapshot.val() as Room) : null;
+    const game = room?.seotdaGame;
+    const referencesThisMatch = game?.matchId === matchId;
+
+    if (referencesThisMatch && room!.status === "playing") continue; // still an active match
+
+    let amount = record.stake;
+    if (referencesThisMatch && room!.status === "finished" && game) {
+      const payouts = getSeotdaPayouts(game);
+      const playerEntry = Object.values(game.players).find((player) => player.userId === userId);
+      amount = playerEntry ? payouts[playerEntry.id] ?? 0 : record.stake;
+    }
+    // Otherwise the room never reached this match (host's browser died
+    // mid-start) or has since moved on to a different match (a rematch
+    // replaced it) — refund the full locked stake as orphaned.
+    const settled = await settleSeotdaMatch(userId, matchId, amount, now).catch(() => false);
+    if (settled) refundedTotal += amount;
+  }
+  return refundedTotal;
 }
 
 /**

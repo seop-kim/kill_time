@@ -71,7 +71,7 @@ import {
   type GirinGame,
 } from "@/lib/girin";
 import { getGirinCoinReward, getMinesweeperCoinReward, getOmokCoinReward } from "@/lib/economy";
-import { exchangeCoinMoney, getWalletForAction, settleCoinReward, subscribeWallet, type WalletProfile } from "@/lib/wallet";
+import { exchangeCoinMoney, getWalletForAction, settleCoinReward, settleSeotdaMatch, subscribeWallet, type WalletProfile } from "@/lib/wallet";
 import { QuickExchangeDialog } from "@/components/QuickExchangeDialog";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
@@ -95,7 +95,7 @@ import { WorkCoverSheet } from "@/components/WorkCoverSheet";
 import { DocumentSettingsDialog } from "@/components/DocumentSettingsDialog";
 import { SeotdaGamePanel } from "@/components/SeotdaGamePanel";
 import { MinesweeperGamePanel } from "@/components/MinesweeperGamePanel";
-import { getSeotdaRemainingSeconds } from "@/lib/seotda";
+import { getSeotdaPayouts, getSeotdaRemainingSeconds } from "@/lib/seotda";
 import { getMinesweeperElapsedSeconds } from "@/lib/minesweeper";
 import { ErrorPage } from "@/components/ErrorPage";
 import { toggleChatOpen } from "@/lib/chat";
@@ -442,6 +442,31 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("전적을 저장하지 못했습니다.", "error");
     });
   }, [activeGameId, code, identity, room, showToast]);
+
+  useEffect(() => {
+    // Safety net: applySeotdaActionToRoom already settles every player from
+    // whichever client ended the hand, but if that client's browser closes
+    // before its settlement calls finish, nobody's money lands. Each client
+    // that later observes the finished game ensures its OWN settlement
+    // happened — settleSeotdaMatch is idempotent, so this is a no-op on the
+    // normal path where settlement already succeeded.
+    if (activeGameId !== "seotda" || room?.status !== "finished" || !identity?.userId || !room.seotdaGame) return;
+    const game = room.seotdaGame;
+    const myId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+    if (!myId) return;
+
+    const settleKey = `seotda-settle:${game.matchId}`;
+    if (walletRewardAttemptedRef.current.has(settleKey)) return;
+    walletRewardAttemptedRef.current.add(settleKey);
+
+    // Silent: on the normal path this races the settlement that
+    // applySeotdaActionToRoom already kicked off for the client that ended
+    // the hand, so "settled === true" here usually just means this call won
+    // that harmless race, not that anything was actually stuck — a toast
+    // would be misleading far more often than it would be informative.
+    const payouts = getSeotdaPayouts(game);
+    settleSeotdaMatch(identity.userId, game.matchId, payouts[myId] ?? 0, Date.now()).catch(() => {});
+  }, [activeGameId, identity, room]);
 
   useEffect(() => {
     const game = room?.minesweeperGame;
@@ -1127,6 +1152,10 @@ export default function RoomClient({ code }: { code: string }) {
       setLeaveConfirmOpen(true);
       return;
     }
+    if (activeGameId === "seotda" && room?.seotdaGame?.status === "betting") {
+      setLeaveConfirmOpen(true);
+      return;
+    }
     leaveRoomAndNavigate();
   }
 
@@ -1150,6 +1179,20 @@ export default function RoomClient({ code }: { code: string }) {
         await forfeit(code, opponentColor);
       } catch {
         // best effort — still leave even if the forfeit write fails
+      }
+    }
+    if (activeGameId === "seotda" && identity && room?.seotdaGame?.status === "betting") {
+      // Forfeit only what's already committed this hand and refund the rest,
+      // same as the disconnect/timeout paths. Only takes effect when it's
+      // currently this player's turn — otherwise the existing turn-timeout
+      // or disconnect handling folds them once it becomes relevant.
+      const myPlayerId = identity.role === "host" ? roomHostId ?? "host" : identity.participantId;
+      if (myPlayerId) {
+        try {
+          await applySeotdaActionToRoom(code, myPlayerId, "fold");
+        } catch {
+          // best effort — still leave even if the fold write fails
+        }
       }
     }
     await leaveRoomAndNavigate();

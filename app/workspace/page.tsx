@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH, type RoomGameId } from "@/lib/rooms";
+import { createRoom, joinRoom, normalizeRoomCode, reconcileOrphanedSeotdaStakes, ROOM_CODE_LENGTH, type RoomGameId } from "@/lib/rooms";
 import { canAffordSeotdaStake, SEOTDA_STAKE_MIN } from "@/lib/economy";
 import { getOrCreateUserId, loadNickname, saveIdentity } from "@/lib/identity";
 import { claimDailyAttendance, ensureWallet, getWalletForAction, subscribeWallet, type WalletProfile } from "@/lib/wallet";
@@ -72,6 +72,17 @@ export default function WorkspacePage() {
       .catch(() => {
         showToast("자동 출석체크를 처리하지 못했습니다.", "error");
       });
+  }, [userId, showToast]);
+
+  useEffect(() => {
+    if (!userId) return;
+    // Best-effort cleanup for Up stakes that got locked but never resolved
+    // (e.g. a browser closed mid-start or mid-settlement on a prior visit).
+    reconcileOrphanedSeotdaStakes(userId)
+      .then((refunded) => {
+        if (refunded > 0) showToast(`이전 Up 판돈 ${refunded.toLocaleString("ko-KR")}머니가 환불되었습니다.`, "info");
+      })
+      .catch(() => {});
   }, [userId, showToast]);
 
   async function handleCreateDocument() {

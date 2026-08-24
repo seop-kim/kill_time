@@ -39,6 +39,11 @@ describe("wallet helpers", () => {
     expect(() => applySeotdaStake({ coin: 0, money: 9_999 }, 10_000)).toThrow();
   });
 
+  it("locks a Seotda stake above the table's 1,000,000 stake ceiling (it locks the player's own money, not the configured stake)", () => {
+    const afterStake = applySeotdaStake({ coin: 0, money: 2_000_000 }, 1_500_000);
+    expect(afterStake).toEqual({ coin: 0, money: 500_000 });
+  });
+
   it("uses the wallet nested in the latest profile snapshot for money actions", async () => {
     const latest = await getWalletForAction("user-1", async () => ({
       nickname: "테스트",

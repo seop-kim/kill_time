@@ -89,14 +89,14 @@ const CARD_DEFINITIONS: Array<Pick<SeotdaCard, "value" | "isGwang">> = [
   { value: 10, isGwang: false },
 ];
 
-// Standard ranking: 알리 > 독사 > 구삥 > 장삥 > 세륙 > 장사.
+// Standard ranking: 알리 > 독사 > 구삥 > 장삥 > 장사 > 세륙 (per 한게임 족보 가이드).
 const SPECIAL_HANDS: Record<string, { score: number; label: string }> = {
   "1,2": { score: 600, label: "알리" },
   "1,4": { score: 500, label: "독사" },
   "1,9": { score: 400, label: "구삥" },
   "1,10": { score: 300, label: "장삥" },
-  "4,6": { score: 200, label: "세륙" },
-  "4,10": { score: 100, label: "장사" },
+  "4,10": { score: 200, label: "장사" },
+  "4,6": { score: 100, label: "세륙" },
 };
 
 function playerOrder(game: SeotdaGame): SeotdaPlayerState[] {
@@ -242,6 +242,10 @@ export function createSeotdaGame(
   };
 }
 
+function handValuesKey(hand: [SeotdaCard, SeotdaCard]): string {
+  return hand.map((card) => card.value).sort((a, b) => a - b).join(",");
+}
+
 export function evaluateSeotdaHand(hand: [SeotdaCard, SeotdaCard]): SeotdaRank {
   const values = hand.map((card) => card.value).sort((a, b) => a - b);
   if (hand.every((card) => card.isGwang) && values.join(",") === "3,8") {
@@ -288,7 +292,9 @@ export function getLegalSeotdaActions(game: SeotdaGame, playerId: string): Seotd
   const halfAmount = toCall + getFractionBetAmount(game, 0.5);
   if (player.stack >= quarterAmount) actions.push("quarter");
   if (player.stack >= halfAmount) actions.push("half");
-  if (player.stack > 0 && (toCall === 0 || player.stack >= toCall)) actions.push("all-in");
+  // All-in is always available with any stack left, even below toCall — a
+  // short stack's only choices are fold or go all-in for less than the call.
+  if (player.stack > 0) actions.push("all-in");
   return actions;
 }
 
@@ -366,13 +372,47 @@ export function expireSeotdaTurn(game: SeotdaGame, now = Date.now()): SeotdaGame
   return applySeotdaAction(game, game.currentPlayerId, action, now);
 }
 
+// Conditional special hands that only outrank their natural (kkeut) score
+// when the strongest other hand at showdown matches a specific condition —
+// otherwise they resolve as a plain kkeut hand, which evaluateSeotdaHand
+// already does correctly without any of these ever being added to
+// SPECIAL_HANDS. No redeal: 구사/멍텅구리구사's "재경기" trigger is simplified to a
+// straight win instead. Suit isn't modeled in this deck (SeotdaCard only
+// tracks value + gwang), so 구사 and 멍텅구리구사 share one rule — the narrower
+// 구사 threshold (알리 이하), since it can't be told apart from 멍텅구리구사 here.
+function winsConditionalHand(values: string, bestOpponent: SeotdaRank): boolean {
+  if (values === "3,7") {
+    // 37땡잡이: beats 1땡~9땡, loses to everything else (10땡 included).
+    return bestOpponent.category === "ddaeng" && bestOpponent.score < 2_010;
+  }
+  if (values === "4,7") {
+    // 47암행어사: beats 13/18광땡, loses to everything else (38광땡 included).
+    return bestOpponent.category === "gwangtta" && bestOpponent.score < 3_003;
+  }
+  if (values === "4,9") {
+    // 구사: beats when the opponent's best hand is 알리 or weaker.
+    return bestOpponent.category === "kkeut" || bestOpponent.category === "special";
+  }
+  return false;
+}
+
 export function getSeotdaWinners(game: SeotdaGame): string[] {
   const players = activePlayers(game);
   if (players.length <= 1) return players.map((player) => player.id);
   const ranked = players.map((player) => {
     if (player.hand.length !== 2) throw new Error("모든 생존 플레이어의 패가 공개되지 않았습니다.");
-    return { id: player.id, rank: evaluateSeotdaHand(player.hand as [SeotdaCard, SeotdaCard]) };
+    const hand = player.hand as [SeotdaCard, SeotdaCard];
+    return { id: player.id, values: handValuesKey(hand), rank: evaluateSeotdaHand(hand) };
   });
+
+  const conditionalWinners = ranked.filter((item) => {
+    const others = ranked.filter((other) => other.id !== item.id);
+    if (others.length === 0) return false;
+    const bestOpponent = others.reduce((best, cur) => (cur.rank.score > best.rank.score ? cur : best));
+    return winsConditionalHand(item.values, bestOpponent.rank);
+  });
+  if (conditionalWinners.length > 0) return conditionalWinners.map((item) => item.id);
+
   const bestScore = Math.max(...ranked.map((item) => item.rank.score));
   return ranked.filter((item) => item.rank.score === bestScore).map((item) => item.id);
 }

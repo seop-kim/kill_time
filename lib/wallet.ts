@@ -4,7 +4,6 @@ import {
   DAILY_ATTENDANCE_COIN_REWARD,
   exchangeCoinToMoney,
   exchangeMoneyToCoin,
-  normalizeSeotdaStake,
   type Currency,
   type WalletBalance,
 } from "./economy";
@@ -67,9 +66,12 @@ export function applyWalletDelta(wallet: WalletProfile, currency: Currency, delt
   return { ...wallet, [currency]: nextBalance };
 }
 
-export function applySeotdaStake(wallet: WalletProfile, stake: number): WalletProfile {
-  const normalizedStake = normalizeSeotdaStake(stake);
-  return applyWalletDelta(wallet, "money", -normalizedStake);
+export function applySeotdaStake(wallet: WalletProfile, amount: number): WalletProfile {
+  // Locks the player's own money (can exceed the table's 1,000,000 stake
+  // ceiling), not the configured stake itself — normalizeSeotdaStake's cap
+  // doesn't apply here.
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Up 잠금 금액은 1 이상의 정수여야 합니다.");
+  return applyWalletDelta(wallet, "money", -amount);
 }
 
 export function applySeotdaPayout(wallet: WalletProfile, amount: number): WalletProfile {
@@ -150,8 +152,13 @@ export async function getWalletForAction(
   return normalizeWallet(profile.wallet);
 }
 
-export async function lockSeotdaStake(userId: string, matchId: string, stake: number, now = Date.now()): Promise<boolean> {
-  const normalizedStake = normalizeSeotdaStake(stake);
+export async function lockSeotdaStake(
+  userId: string,
+  matchId: string,
+  stake: number,
+  now = Date.now(),
+  roomCode?: string,
+): Promise<boolean> {
   let locked = false;
   let balanceAfter = 0;
   const result = await runTransaction(profileRef(userId), (current) => {
@@ -159,7 +166,7 @@ export async function lockSeotdaStake(userId: string, matchId: string, stake: nu
     const stakes = profile.seotdaStakes ?? {};
     if (Object.prototype.hasOwnProperty.call(stakes, matchId)) return current;
 
-    const wallet = applySeotdaStake(normalizeWallet(profile.wallet), normalizedStake);
+    const wallet = applySeotdaStake(normalizeWallet(profile.wallet), stake);
     locked = true;
     balanceAfter = wallet.money;
     return {
@@ -167,7 +174,7 @@ export async function lockSeotdaStake(userId: string, matchId: string, stake: nu
       wallet,
       seotdaStakes: {
         ...stakes,
-        [matchId]: { stake: normalizedStake, createdAt: now },
+        [matchId]: { stake, createdAt: now, ...(roomCode ? { roomCode } : {}) },
       },
     };
   });
@@ -178,11 +185,36 @@ export async function lockSeotdaStake(userId: string, matchId: string, stake: nu
     gameId: "seotda",
     matchId,
     currency: "money",
-    amount: -normalizedStake,
+    amount: -stake,
     balanceAfter,
     createdAt: now,
   });
   return true;
+}
+
+export interface SeotdaStakeRecord {
+  stake: number;
+  createdAt: number;
+  roomCode?: string;
+}
+
+/**
+ * Stakes locked via lockSeotdaStake that don't have a matching settlement
+ * yet — either a match still in progress, or one that got orphaned because
+ * the starting client closed before the room ever committed. Callers decide
+ * which is which by checking the referenced room (see roomCode).
+ */
+export async function getUnsettledSeotdaStakes(userId: string): Promise<Record<string, SeotdaStakeRecord>> {
+  const profile = asRecord(await readProfileForAction(userId)) as WalletProfileNode;
+  const stakes = asRecord(profile.seotdaStakes) as Record<string, SeotdaStakeRecord>;
+  const settlements = asRecord(profile.walletSettlements);
+  const unsettled: Record<string, SeotdaStakeRecord> = {};
+  for (const [matchId, record] of Object.entries(stakes)) {
+    if (!Object.prototype.hasOwnProperty.call(settlements, buildSettlementId("seotda", matchId))) {
+      unsettled[matchId] = record;
+    }
+  }
+  return unsettled;
 }
 
 export async function settleSeotdaMatch(userId: string, matchId: string, amount: number, now = Date.now()): Promise<boolean> {

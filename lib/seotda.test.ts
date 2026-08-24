@@ -37,21 +37,21 @@ describe("Seotda deck and ranking", () => {
     expect(evaluateSeotdaHand([card(4), card(5)])).toMatchObject({ label: "9끗", category: "kkeut" });
   });
 
-  it("ranks the six special hands in standard order: 알리 > 독사 > 구삥 > 장삥 > 세륙 > 장사", () => {
+  it("ranks the six special hands in standard order: 알리 > 독사 > 구삥 > 장삥 > 장사 > 세륙", () => {
     const scores = {
       알리: evaluateSeotdaHand([card(1), card(2)]).score,
       독사: evaluateSeotdaHand([card(1), card(4)]).score,
       구삥: evaluateSeotdaHand([card(1), card(9)]).score,
       장삥: evaluateSeotdaHand([card(1), card(10)]).score,
-      세륙: evaluateSeotdaHand([card(4), card(6)]).score,
       장사: evaluateSeotdaHand([card(4), card(10)]).score,
+      세륙: evaluateSeotdaHand([card(4), card(6)]).score,
     };
 
     expect(scores.알리).toBeGreaterThan(scores.독사);
     expect(scores.독사).toBeGreaterThan(scores.구삥);
     expect(scores.구삥).toBeGreaterThan(scores.장삥);
-    expect(scores.장삥).toBeGreaterThan(scores.세륙);
-    expect(scores.세륙).toBeGreaterThan(scores.장사);
+    expect(scores.장삥).toBeGreaterThan(scores.장사);
+    expect(scores.장사).toBeGreaterThan(scores.세륙);
   });
 });
 
@@ -154,6 +154,28 @@ describe("Seotda game transitions", () => {
 
     expect(timedOut.players.p1.folded).toBe(true);
     expect(timedOut.lastAction?.action).toBe("fold");
+  });
+
+  it("allows going all-in for less than the call amount instead of forcing a fold", () => {
+    const baseGame = createSeotdaGame(1_000, players, 100, () => 0.1);
+    const game: SeotdaGame = {
+      ...baseGame,
+      currentBet: 500,
+      players: {
+        ...baseGame.players,
+        p1: { ...baseGame.players.p1, stack: 100 },
+      },
+    };
+
+    expect(getLegalSeotdaActions(game, "p1")).toEqual(expect.arrayContaining(["fold", "all-in"]));
+    expect(getLegalSeotdaActions(game, "p1")).not.toContain("call");
+
+    const afterAllIn = applySeotdaAction(game, "p1", "all-in", 101);
+
+    expect(afterAllIn.players.p1.stack).toBe(0);
+    expect(afterAllIn.players.p1.committed).toBe(100);
+    // A short all-in doesn't raise the bet everyone else must match.
+    expect(afterAllIn.currentBet).toBe(500);
   });
 
   it("keeps the first player's actions available when the turn comes back after a raise", () => {
@@ -359,5 +381,55 @@ describe("Seotda game transitions", () => {
 
     const payouts = getSeotdaPayouts(tied);
     expect(payouts).toEqual({ p1: 100, p2: 100 });
+  });
+});
+
+describe("conditional special hands (no redeal)", () => {
+  function withHands(p1Hand: [SeotdaCard, SeotdaCard], p2Hand: [SeotdaCard, SeotdaCard]): SeotdaGame {
+    const game = createSeotdaGame(100, players, 100, () => 0.1);
+    return {
+      ...game,
+      players: {
+        ...game.players,
+        p1: { ...game.players.p1, hand: p1Hand },
+        p2: { ...game.players.p2, hand: p2Hand },
+      },
+    };
+  }
+
+  it("37땡잡이 (3,7) beats 1땡~9땡", () => {
+    const game = withHands([card(3), card(7)], [card(5), card(5, false, "5-b")]);
+    expect(getSeotdaWinners(game)).toEqual(["p1"]);
+  });
+
+  it("37땡잡이 (3,7) loses to 10땡", () => {
+    const game = withHands([card(3), card(7)], [card(10), card(10, false, "10-b")]);
+    expect(getSeotdaWinners(game)).toEqual(["p2"]);
+  });
+
+  it("37땡잡이 (3,7) falls back to a plain 0끗 against a non-땡 hand", () => {
+    const game = withHands([card(3), card(7)], [card(2), card(3, false, "3-b")]);
+    // p2's 2,3 is a 5끗 (score 105), beating p1's fallback 0끗 (score 100).
+    expect(getSeotdaWinners(game)).toEqual(["p2"]);
+  });
+
+  it("47암행어사 (4,7) beats 13광땡 and 18광땡", () => {
+    const game = withHands([card(4), card(7)], [card(1, true), card(3, true)]);
+    expect(getSeotdaWinners(game)).toEqual(["p1"]);
+  });
+
+  it("47암행어사 (4,7) loses to 38광땡", () => {
+    const game = withHands([card(4), card(7)], [card(3, true), card(8, true)]);
+    expect(getSeotdaWinners(game)).toEqual(["p2"]);
+  });
+
+  it("구사 (4,9) beats a kkeut or named special hand", () => {
+    const game = withHands([card(4), card(9)], [card(2), card(3, false, "3-b")]);
+    expect(getSeotdaWinners(game)).toEqual(["p1"]);
+  });
+
+  it("구사 (4,9) loses to a 땡 hand", () => {
+    const game = withHands([card(4), card(9)], [card(5), card(5, false, "5-b")]);
+    expect(getSeotdaWinners(game)).toEqual(["p2"]);
   });
 });
