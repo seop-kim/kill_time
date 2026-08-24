@@ -349,15 +349,29 @@ export async function startSeotdaGame(code: string, now = Date.now()): Promise<S
   if (!snapshot.exists()) return { ok: false, reason: "already-started" };
   const room = snapshot.val() as Room;
   const participants = getMatchParticipants(room);
-  const balances: Record<string, number> = {};
-  await Promise.all(
-    participants.map(async (participant) => {
-      if (!participant.userId) return;
-      balances[participant.userId] = (await getWallet(participant.userId)).money;
-    }),
-  );
 
-  const validation = validateSeotdaStart(room, balances);
+  const fetchBalances = async (): Promise<Record<string, number>> => {
+    const balances: Record<string, number> = {};
+    await Promise.all(
+      participants.map(async (participant) => {
+        if (!participant.userId) return;
+        balances[participant.userId] = (await getWallet(participant.userId)).money;
+      }),
+    );
+    return balances;
+  };
+
+  let balances = await fetchBalances();
+  let validation = validateSeotdaStart(room, balances);
+  // A participant who just joined has a wallet listener that may not have
+  // synced yet on this client, so Firebase's get() can briefly serve a stale
+  // (empty) cached balance. One short retry avoids falsely blocking a start
+  // that happens right after someone joins.
+  if (!validation.ok && validation.reason === "insufficient-funds") {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    balances = await fetchBalances();
+    validation = validateSeotdaStart(room, balances);
+  }
   if (!validation.ok) return validation;
 
   const stake = normalizeSeotdaStake(room.moneyStake ?? SEOTDA_STAKE_MIN);
