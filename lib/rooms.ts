@@ -12,6 +12,7 @@ import {
 import {
   applySeotdaAction,
   createSeotdaGame,
+  expireSeotdaTurn,
   getSeotdaPayouts,
   getSeotdaWinners,
   SEOTDA_MAX_PLAYERS,
@@ -444,71 +445,86 @@ export async function startSeotdaGame(code: string, now = Date.now()): Promise<S
     return balances;
   };
 
-  let balances = await fetchBalances();
-  let validation = validateSeotdaStart(room, balances);
-  // A participant who just joined has a wallet listener that may not have
-  // synced yet on this client, so Firebase's get() can briefly serve a stale
-  // (empty) cached balance. One short retry avoids falsely blocking a start
-  // that happens right after someone joins.
-  if (!validation.ok && validation.reason === "insufficient-funds") {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    balances = await fetchBalances();
-    validation = validateSeotdaStart(room, balances);
-  }
-  if (!validation.ok) return validation;
-
-  const stake = normalizeSeotdaStake(room.moneyStake ?? SEOTDA_STAKE_MIN);
-  const seotdaParticipants = getSeotdaParticipants(room);
-  const game = createSeotdaGame(
-    stake,
-    seotdaParticipants.map((participant, seat) => ({
-      id: participant.id,
-      name: participant.name,
-      seat,
-      userId: participant.userId,
-      money: participant.userId ? Math.max(0, Math.floor(balances[participant.userId] ?? 0)) : 0,
-    })),
-    now,
-  );
-  const lockedAmounts: Record<string, number> = {};
-  try {
-    for (const participant of seotdaParticipants) {
-      const amount = game.players[participant.id].stack;
-      if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, amount, now))) {
-        throw new Error("Up 판돈을 잠그지 못했습니다.");
-      }
-      lockedAmounts[participant.userId] = amount;
+  const attemptStart = async (): Promise<SeotdaStartResult> => {
+    let balances = await fetchBalances();
+    let validation = validateSeotdaStart(room, balances);
+    // A participant who just joined or just exchanged coin for money has a
+    // wallet that may not have synced yet on this client, so Firebase's
+    // get() can briefly serve a stale (empty) cached balance. One short
+    // retry avoids falsely blocking a start right after either happens.
+    if (!validation.ok && validation.reason === "insufficient-funds") {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      balances = await fetchBalances();
+      validation = validateSeotdaStart(room, balances);
     }
+    if (!validation.ok) return validation;
 
-    const transaction = await runTransaction(roomRef(code), (currentRoom: Room | null) => {
-      if (!currentRoom || currentRoom.gameId !== "seotda" || currentRoom.status !== "waiting" || currentRoom.seotdaGame) return currentRoom;
-      currentRoom.seotdaGame = game;
-      currentRoom.status = "playing";
-      currentRoom.gameStartedAt = now;
-      return currentRoom;
-    });
-    if (!transaction.committed) throw new Error("Up 게임 시작 상태를 저장하지 못했습니다.");
-    return { ok: true, matchId: game.matchId };
-  } catch (error) {
-    await Promise.all(
-      Object.entries(lockedAmounts).map(([userId, amount]) =>
-        settleSeotdaMatch(userId, game.matchId, amount, now).catch(() => false),
-      ),
+    const stake = normalizeSeotdaStake(room.moneyStake ?? SEOTDA_STAKE_MIN);
+    const seotdaParticipants = getSeotdaParticipants(room);
+    const game = createSeotdaGame(
+      stake,
+      seotdaParticipants.map((participant, seat) => ({
+        id: participant.id,
+        name: participant.name,
+        seat,
+        userId: participant.userId,
+        money: participant.userId ? Math.max(0, Math.floor(balances[participant.userId] ?? 0)) : 0,
+      })),
+      now,
     );
+    const lockedAmounts: Record<string, number> = {};
+    try {
+      for (const participant of seotdaParticipants) {
+        const amount = game.players[participant.id].stack;
+        if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, amount, now))) {
+          throw new Error("Up 판돈을 잠그지 못했습니다.");
+        }
+        lockedAmounts[participant.userId] = amount;
+      }
+
+      const transaction = await runTransaction(roomRef(code), (currentRoom: Room | null) => {
+        if (!currentRoom || currentRoom.gameId !== "seotda" || currentRoom.status !== "waiting" || currentRoom.seotdaGame) return currentRoom;
+        currentRoom.seotdaGame = game;
+        currentRoom.status = "playing";
+        currentRoom.gameStartedAt = now;
+        return currentRoom;
+      });
+      if (!transaction.committed) throw new Error("Up 게임 시작 상태를 저장하지 못했습니다.");
+      return { ok: true, matchId: game.matchId };
+    } catch (error) {
+      await Promise.all(
+        Object.entries(lockedAmounts).map(([userId, amount]) =>
+          settleSeotdaMatch(userId, game.matchId, amount, now).catch(() => false),
+        ),
+      );
+      throw error;
+    }
+  };
+
+  try {
+    return await attemptStart();
+  } catch (error) {
+    // The balances snapshot passed validation but a lock still rejected one
+    // as insufficient — the same just-modified-wallet staleness the retry
+    // above targets, just caught one step later by the lock's own read.
+    // Fresh balances a moment later resolve it without a real shortfall.
+    if (error instanceof Error && error.message.endsWith("잔액이 부족합니다.")) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return attemptStart();
+    }
     throw error;
   }
 }
 
-export async function applySeotdaActionToRoom(
+async function commitSeotdaTransition(
   code: string,
-  playerId: string,
-  action: SeotdaActionType,
-  now = Date.now(),
+  computeNextGame: (game: SeotdaGame) => SeotdaGame,
+  now: number,
 ): Promise<SeotdaGame> {
   let finishedGame: SeotdaGame | null = null;
   const transaction = await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room || room.gameId !== "seotda" || room.status !== "playing" || !room.seotdaGame) return room;
-    const nextGame = applySeotdaAction(room.seotdaGame, playerId, action, now);
+    const nextGame = computeNextGame(room.seotdaGame);
     if (nextGame.status === "showdown") {
       nextGame.winnerIds = getSeotdaWinners(nextGame);
       nextGame.status = "finished";
@@ -533,6 +549,20 @@ export async function applySeotdaActionToRoom(
     );
   }
   return nextGame;
+}
+
+export async function applySeotdaActionToRoom(
+  code: string,
+  playerId: string,
+  action: SeotdaActionType,
+  now = Date.now(),
+): Promise<SeotdaGame> {
+  return commitSeotdaTransition(code, (game) => applySeotdaAction(game, playerId, action, now), now);
+}
+
+/** Turn-timeout path: calls if the current player can afford it, folds otherwise (see expireSeotdaTurn). */
+export async function expireSeotdaTurnInRoom(code: string, now = Date.now()): Promise<SeotdaGame> {
+  return commitSeotdaTransition(code, (game) => expireSeotdaTurn(game, now), now);
 }
 
 /**

@@ -36,6 +36,7 @@ import {
   ROOM_HOME_PATH,
   sendChatMessage,
   applySeotdaActionToRoom,
+  expireSeotdaTurnInRoom,
   openMinesweeperCellInRoom,
   startSeotdaGame,
   startMinesweeperGame,
@@ -639,7 +640,7 @@ export default function RoomClient({ code }: { code: string }) {
         setTimerSeconds(remaining);
         if (remaining <= 0) {
           if (interval) clearInterval(interval);
-          applySeotdaActionToRoom(code, seotdaCurrentPlayerId!, "fold").catch(() => {});
+          expireSeotdaTurnInRoom(code).catch(() => {});
         }
       }
       tickSeotda();
@@ -723,11 +724,20 @@ export default function RoomClient({ code }: { code: string }) {
     if (!identity || !opponentRole || roomStatus !== "playing" || opponentOnline !== false) return undefined;
     const timer = setTimeout(() => {
       if (!room) return;
+      if (activeGameId === "seotda") {
+        // Omok's forfeit() only sets room.winner/status — it never touches
+        // seotdaGame or settles the locked stake. Folding the disconnected
+        // participant instead reuses applySeotdaActionToRoom's existing
+        // showdown/settlement path so their money doesn't get stuck.
+        const opponentParticipant = opponentRole ? participantForRole(opponentRole, room) : null;
+        if (opponentParticipant) applySeotdaActionToRoom(code, opponentParticipant.id, "fold").catch(() => {});
+        return;
+      }
       if (playerRole) forfeit(code, colorOf(playerRole, room)).catch(() => {});
     }, DISCONNECT_GRACE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opponentOnline, roomStatus, identity, playerRole, opponentRole, code]);
+  }, [opponentOnline, roomStatus, identity, playerRole, opponentRole, code, activeGameId]);
 
   useEffect(() => {
     if (!room || !roomHostId || !identity || kickedOutRef.current) return;
