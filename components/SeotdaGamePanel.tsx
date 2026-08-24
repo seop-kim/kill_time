@@ -71,7 +71,8 @@ export function SeotdaGamePanel({
 
   const participantCard = (participant: typeof players[number]) => {
     const isSelf = participant.id === playerId;
-    const visibleCards = isSelf ? participant.hand : Array.from({ length: Math.max(1, participant.hand.length) }, () => null);
+    const revealAll = game?.status === "finished";
+    const visibleCards = isSelf || revealAll ? participant.hand : Array.from({ length: Math.max(1, participant.hand.length) }, () => null);
     const isCurrent = participant.id === game?.currentPlayerId;
     const walletMoney = participantMoney[participant.id];
     const totalMoney = walletMoney == null ? null : walletMoney + participant.stack;

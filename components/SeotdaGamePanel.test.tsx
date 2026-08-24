@@ -161,5 +161,13 @@ describe("SeotdaGamePanel", () => {
     expect(markup).toContain("승리했습니다");
     expect(markup).toContain('data-seotda-field="rematch"');
     expect(markup).toContain("다시 하기");
+
+    // The opponent's actual card is revealed once the match is finished,
+    // instead of the face-down "패" placeholder shown during play.
+    const opponentCard = finishedGame.players.p2.hand[0];
+    const opponentCardLabel = `${opponentCard.value}${opponentCard.isGwang ? "광" : "월"}`;
+    expect(markup).toMatch(
+      new RegExp(`data-seotda-field="player-card-p2"[^]*?${opponentCardLabel}`),
+    );
   });
 });
