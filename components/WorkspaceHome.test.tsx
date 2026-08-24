@@ -23,6 +23,22 @@ describe("WorkspaceHome", () => {
     expect(markup).not.toContain("머니 교환");
   });
 
+  it("shows a loading placeholder instead of a stale zero balance while the wallet is still loading", () => {
+    const markup = renderToStaticMarkup(
+      <WorkspaceHome
+        nickname="테스트 사용자"
+        wallet={{ coin: 0, money: 0 }}
+        walletLoaded={false}
+        onCreateDocument={() => {}}
+        onOpenJoin={() => {}}
+        onOpenExchange={() => {}}
+      />,
+    );
+
+    expect(markup.match(/불러오는 중/g)).toHaveLength(2);
+    expect(markup).not.toContain(">0</strong>");
+  });
+
   it("keeps the hub as a compact, fully populated neutral cell grid", () => {
     const markup = renderToStaticMarkup(
       <WorkspaceHome

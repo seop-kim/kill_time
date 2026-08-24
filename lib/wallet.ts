@@ -129,17 +129,25 @@ export function subscribeWallet(userId: string, callback: (wallet: WalletProfile
   });
 }
 
-export async function getWallet(userId: string): Promise<WalletProfile> {
+async function readProfileForAction(userId: string): Promise<unknown> {
   await ensureFirebaseAuth();
-  const snapshot = await get(ref(getDb(), `profiles/${userId}/wallet`));
-  return normalizeWallet(snapshot.val());
+  // `subscribeWallet` keeps the child wallet query active. Firebase's `get`
+  // returns that active query's cache, so read the parent profile for actions
+  // that must observe the latest server-confirmed balance.
+  const snapshot = await get(profileRef(userId));
+  return snapshot.val();
+}
+
+export async function getWallet(userId: string): Promise<WalletProfile> {
+  return getWalletForAction(userId);
 }
 
 export async function getWalletForAction(
   userId: string,
-  readWallet: (userId: string) => Promise<WalletProfile> = getWallet,
+  readProfile: (userId: string) => Promise<unknown> = readProfileForAction,
 ): Promise<WalletProfile> {
-  return normalizeWallet(await readWallet(userId));
+  const profile = asRecord(await readProfile(userId));
+  return normalizeWallet(profile.wallet);
 }
 
 export async function lockSeotdaStake(userId: string, matchId: string, stake: number, now = Date.now()): Promise<boolean> {

@@ -4,7 +4,7 @@ export const SEOTDA_MAX_PLAYERS = 6;
 export const SEOTDA_TURN_SECONDS = 30;
 
 export type SeotdaStatus = "betting" | "showdown" | "finished";
-export type SeotdaActionType = "check" | "bet" | "quarter" | "half" | "call" | "raise" | "all-in" | "fold";
+export type SeotdaActionType = "bet" | "quarter" | "half" | "call" | "raise" | "all-in" | "fold";
 
 export interface SeotdaCard {
   id: string;
@@ -17,6 +17,8 @@ export interface SeotdaPlayerInput {
   name: string;
   seat: number;
   userId?: string;
+  /** The player's own money brought into this match — their play stack, independent of the table's stake floor. */
+  money: number;
 }
 
 export interface SeotdaRank {
@@ -44,6 +46,7 @@ export interface SeotdaLastAction {
 export interface SeotdaGame {
   matchId: string;
   status: SeotdaStatus;
+  /** Table entry floor and minBet basis — each player's actual play stack is their own money, see SeotdaPlayerState.stack. */
   stake: number;
   round: number;
   pot: number;
@@ -86,13 +89,14 @@ const CARD_DEFINITIONS: Array<Pick<SeotdaCard, "value" | "isGwang">> = [
   { value: 10, isGwang: false },
 ];
 
+// Standard ranking: 알리 > 독사 > 구삥 > 장삥 > 세륙 > 장사.
 const SPECIAL_HANDS: Record<string, { score: number; label: string }> = {
   "1,2": { score: 600, label: "알리" },
   "1,4": { score: 500, label: "독사" },
   "1,9": { score: 400, label: "구삥" },
   "1,10": { score: 300, label: "장삥" },
-  "4,10": { score: 200, label: "장사" },
-  "4,6": { score: 100, label: "세륙" },
+  "4,6": { score: 200, label: "세륙" },
+  "4,10": { score: 100, label: "장사" },
 };
 
 function playerOrder(game: SeotdaGame): SeotdaPlayerState[] {
@@ -138,7 +142,7 @@ function isRoundComplete(game: SeotdaGame): boolean {
 }
 
 function dealSecondCards(game: SeotdaGame): void {
-  for (const player of playerOrder(game)) {
+  for (const player of activePlayers(game)) {
     const card = game.deck.shift();
     if (card) player.hand.push(card);
   }
@@ -151,9 +155,15 @@ function finishBettingRound(game: SeotdaGame, now: number): void {
     return;
   }
 
-  if (game.round === 1) {
-    dealSecondCards(game);
+  // Standard Seotda has exactly two betting rounds — one after the first
+  // card, one after the second. Once round 2 settles, go straight to
+  // showdown instead of opening a third round.
+  if (game.round !== 1) {
+    game.status = "showdown";
+    game.currentPlayerId = null;
+    return;
   }
+  dealSecondCards(game);
   game.round += 1;
   if (!canContinueBetting(game)) {
     game.status = "showdown";
@@ -212,7 +222,7 @@ export function createSeotdaGame(
   const playerStates = Object.fromEntries(
     orderedPlayers.map((player, index) => [
       player.id,
-      { ...player, hand: [deck[index]], stack: normalizedStake, committed: 0, folded: false, acted: false },
+      { ...player, hand: [deck[index]], stack: Math.max(0, Math.floor(player.money)), committed: 0, folded: false, acted: false },
     ]),
   );
 
@@ -252,8 +262,11 @@ export function evaluateSeotdaHand(hand: [SeotdaCard, SeotdaCard]): SeotdaRank {
   return { category: "kkeut", score: 100 + kkeut, label: `${kkeut}끗` };
 }
 
+// Standard Seotda quarter/half bets scale with the current pot, not the
+// buy-in — minBet is only a floor so an empty early pot doesn't produce a
+// zero-size bet.
 function getFractionBetAmount(game: SeotdaGame, fraction: number): number {
-  return Math.max(game.minBet, Math.ceil(Math.max(game.stake, game.pot) * fraction));
+  return Math.max(game.minBet, Math.ceil(game.pot * fraction));
 }
 
 export function getLegalSeotdaActions(game: SeotdaGame, playerId: string): SeotdaActionType[] {
@@ -264,7 +277,8 @@ export function getLegalSeotdaActions(game: SeotdaGame, playerId: string): Seotd
   const actions: SeotdaActionType[] = ["fold"];
   const toCall = Math.max(0, game.currentBet - player.committed);
   if (toCall === 0) {
-    actions.push("check");
+    // Standard Seotda has no free "check" — the first actor in a round
+    // either bets (at least minBet) or folds.
     if (player.stack >= game.minBet) actions.push("bet");
   } else if (player.stack >= toCall) {
     actions.push("call");
@@ -297,9 +311,7 @@ export function applySeotdaAction(game: SeotdaGame, playerId: string, action: Se
     advanceTurn(next, playerId, now);
     return next;
   }
-  if (action === "check") {
-    player.acted = true;
-  } else if (action === "bet") {
+  if (action === "bet") {
     committedAmount = next.minBet;
     player.acted = true;
   } else if (action === "call") {
@@ -339,6 +351,7 @@ export function applySeotdaAction(game: SeotdaGame, playerId: string, action: Se
   return next;
 }
 
+/** On timeout: call if a call is affordable, otherwise fold. */
 export function expireSeotdaTurn(game: SeotdaGame, now = Date.now()): SeotdaGame {
   if (
     game.status !== "betting" ||
@@ -348,7 +361,9 @@ export function expireSeotdaTurn(game: SeotdaGame, now = Date.now()): SeotdaGame
     return game;
   }
 
-  return applySeotdaAction(game, game.currentPlayerId, "fold", now);
+  const legalActions = getLegalSeotdaActions(game, game.currentPlayerId);
+  const action: SeotdaActionType = legalActions.includes("call") ? "call" : "fold";
+  return applySeotdaAction(game, game.currentPlayerId, action, now);
 }
 
 export function getSeotdaWinners(game: SeotdaGame): string[] {
@@ -363,19 +378,19 @@ export function getSeotdaWinners(game: SeotdaGame): string[] {
 }
 
 export function getSeotdaPayouts(game: SeotdaGame): Record<string, number> {
-  const payouts = Object.fromEntries(Object.values(game.players).map((player) => [player.id, 0]));
+  // The wallet already locked each player's own money (SeotdaPlayerInput.money)
+  // at match start. Every player gets back whatever they didn't bet (their
+  // remaining stack) regardless of outcome; only the contested pot goes to
+  // the winner(s), split evenly with any remainder handed out by seat order.
+  const payouts = Object.fromEntries(Object.values(game.players).map((player) => [player.id, player.stack]));
   const winners = getSeotdaWinners(game);
   if (winners.length === 0) return payouts;
 
-  // The wallet already deducted one fixed stake from every player at match start.
-  // Return that entire locked pool to the winner(s), so a 1:1 winner receives
-  // their own stake back plus the loser's stake.
-  const lockedPool = game.stake * Object.keys(game.players).length;
-  const share = Math.floor(lockedPool / winners.length);
-  let remainder = lockedPool % winners.length;
+  const share = Math.floor(game.pot / winners.length);
+  let remainder = game.pot % winners.length;
   for (const player of playerOrder(game)) {
     if (!winners.includes(player.id)) continue;
-    payouts[player.id] = share;
+    payouts[player.id] += share;
     if (remainder > 0) {
       payouts[player.id] += 1;
       remainder -= 1;

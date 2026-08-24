@@ -361,23 +361,26 @@ export async function startSeotdaGame(code: string, now = Date.now()): Promise<S
   if (!validation.ok) return validation;
 
   const stake = normalizeSeotdaStake(room.moneyStake ?? SEOTDA_STAKE_MIN);
+  const seotdaParticipants = getSeotdaParticipants(room);
   const game = createSeotdaGame(
     stake,
-    getSeotdaParticipants(room).map((participant, seat) => ({
+    seotdaParticipants.map((participant, seat) => ({
       id: participant.id,
       name: participant.name,
       seat,
       userId: participant.userId,
+      money: participant.userId ? Math.max(0, Math.floor(balances[participant.userId] ?? 0)) : 0,
     })),
     now,
   );
-  const lockedUserIds: string[] = [];
+  const lockedAmounts: Record<string, number> = {};
   try {
-    for (const participant of getSeotdaParticipants(room)) {
-      if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, stake, now))) {
+    for (const participant of seotdaParticipants) {
+      const amount = game.players[participant.id].stack;
+      if (!participant.userId || !(await lockSeotdaStake(participant.userId, game.matchId, amount, now))) {
         throw new Error("Up 판돈을 잠그지 못했습니다.");
       }
-      lockedUserIds.push(participant.userId);
+      lockedAmounts[participant.userId] = amount;
     }
 
     const transaction = await runTransaction(roomRef(code), (currentRoom: Room | null) => {
@@ -390,7 +393,11 @@ export async function startSeotdaGame(code: string, now = Date.now()): Promise<S
     if (!transaction.committed) throw new Error("Up 게임 시작 상태를 저장하지 못했습니다.");
     return { ok: true, matchId: game.matchId };
   } catch (error) {
-    await Promise.all(lockedUserIds.map((userId) => settleSeotdaMatch(userId, game.matchId, stake, now).catch(() => false)));
+    await Promise.all(
+      Object.entries(lockedAmounts).map(([userId, amount]) =>
+        settleSeotdaMatch(userId, game.matchId, amount, now).catch(() => false),
+      ),
+    );
     throw error;
   }
 }

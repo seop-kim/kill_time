@@ -1199,7 +1199,7 @@ export function ExcelChrome({
             />
             <TopBtn
               icon={<PencilIcon />}
-              label={statusLabel}
+              label={statusLabel === "대기 중" && onStatusClick ? `▶ ${startActionLabel}` : statusLabel}
               pill
               onClick={onStatusClick}
               attention={statusLabel === "대기 중" && Boolean(onStatusClick)}

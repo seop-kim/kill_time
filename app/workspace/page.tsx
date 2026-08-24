@@ -19,6 +19,7 @@ export default function WorkspacePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
   const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
+  const [walletLoaded, setWalletLoaded] = useState(false);
   const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
   const [joinOpen, setJoinOpen] = useState(false);
   const [roomCode, setRoomCode] = useState("");
@@ -43,6 +44,7 @@ export default function WorkspacePage() {
     });
     return subscribeWallet(id, (nextWallet) => {
       setWallet(nextWallet);
+      setWalletLoaded(true);
     });
   }, [router, showToast]);
 
@@ -142,6 +144,7 @@ export default function WorkspacePage() {
       <WorkspaceHome
         nickname={nickname}
         wallet={wallet}
+        walletLoaded={walletLoaded}
         onCreateDocument={() => setCreateOpen(true)}
         onOpenJoin={() => setJoinOpen(true)}
         onOpenExchange={() => router.push("/workspace/exchange")}
