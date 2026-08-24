@@ -4,21 +4,20 @@ import { createMinesweeperGame } from "../lib/minesweeper";
 import { MinesweeperGamePanel } from "./MinesweeperGamePanel";
 
 describe("MinesweeperGamePanel", () => {
-  it("renders the expert board as spreadsheet cells with counters", () => {
+  it("fills the sheet with neutral spreadsheet cells without a status row", () => {
     const markup = renderToStaticMarkup(
       <MinesweeperGamePanel
         game={createMinesweeperGame("mine-1", 1, 100)}
         onOpenCell={() => {}}
         onToggleFlag={() => {}}
-        onRestart={() => {}}
       />,
     );
 
-    expect(markup).toContain('data-minesweeper-board="30x16"');
-    expect(markup).toContain('data-minesweeper-field="remaining-mines"');
-    expect(markup).toContain('data-minesweeper-field="elapsed-time"');
+    expect(markup).toContain('data-minesweeper-board="64x40"');
     expect(markup).toContain('data-minesweeper-cell="0:0"');
-    expect(markup).toContain('data-minesweeper-cell="15:29"');
-    expect(markup).toContain(">99<");
+    expect(markup).toContain('data-minesweeper-cell="39:63"');
+    expect(markup).not.toContain("현황");
+    expect(markup).not.toContain("남은 지뢰");
+    expect(markup).not.toContain("경과 시간");
   });
 });

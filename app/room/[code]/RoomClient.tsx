@@ -95,6 +95,7 @@ import { DocumentSettingsDialog } from "@/components/DocumentSettingsDialog";
 import { SeotdaGamePanel } from "@/components/SeotdaGamePanel";
 import { MinesweeperGamePanel } from "@/components/MinesweeperGamePanel";
 import { getSeotdaRemainingSeconds } from "@/lib/seotda";
+import { getMinesweeperElapsedSeconds } from "@/lib/minesweeper";
 import { ErrorPage } from "@/components/ErrorPage";
 import { toggleChatOpen } from "@/lib/chat";
 
@@ -601,6 +602,7 @@ export default function RoomClient({ code }: { code: string }) {
   const seotdaStatus = seotdaGame?.status;
   const seotdaTurnStartedAt = seotdaGame?.turnStartedAt;
   const seotdaCurrentPlayerId = seotdaGame?.currentPlayerId;
+  const minesweeperGame = room?.minesweeperGame;
 
   useEffect(() => {
     if (activeGameId === "girin") {
@@ -647,6 +649,23 @@ export default function RoomClient({ code }: { code: string }) {
       };
     }
 
+    if (activeGameId === "minesweeper") {
+      const currentMinesweeperGame = minesweeperGame;
+      if (!currentMinesweeperGame) {
+        setTimerSeconds(null);
+        return undefined;
+      }
+
+      function tickMinesweeper() {
+        if (!currentMinesweeperGame) return;
+        setTimerSeconds(getMinesweeperElapsedSeconds(currentMinesweeperGame));
+      }
+      tickMinesweeper();
+      if (currentMinesweeperGame.status !== "playing") return undefined;
+      const interval = setInterval(tickMinesweeper, 1_000);
+      return () => clearInterval(interval);
+    }
+
     if (roomStatus !== "playing" || !turnStartedAt || !currentTurn) {
       setTimerSeconds(null);
       return undefined;
@@ -666,7 +685,7 @@ export default function RoomClient({ code }: { code: string }) {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [activeGameId, currentGirinStatus, girinTurnStartedAt, seotdaCurrentPlayerId, seotdaGame, seotdaStatus, seotdaTurnStartedAt, turnStartedAt, currentTurn, roomStatus, code]);
+  }, [activeGameId, currentGirinStatus, girinTurnStartedAt, seotdaCurrentPlayerId, seotdaGame, seotdaStatus, seotdaTurnStartedAt, minesweeperGame, turnStartedAt, currentTurn, roomStatus, code]);
 
   // Opponent disconnect → grace period → forfeit in their favor.
   const opponentRole = playerRole ? opposite(playerRole) : null;
@@ -1499,7 +1518,6 @@ export default function RoomClient({ code }: { code: string }) {
                 showToast("깃발을 표시하지 못했습니다.", "error"),
               );
             }}
-            onRestart={room.status === "finished" && identity.role === "host" ? handleRestartClick : undefined}
           />
         ) : activeGameId === "seotda" ? (
           <SeotdaGamePanel

@@ -81,6 +81,13 @@ describe("Minesweeper solo rooms", () => {
     expect(restarted.status).toBe("playing");
     expect(restarted.minesweeperGame).toMatchObject({ matchId: "mine-2", seed: 456, opened: [] });
   });
+
+  it("starts without returning undefined values to Firebase", () => {
+    const started = startMinesweeperRoom(soloRoom, "mine-1", 123, 100);
+
+    expect(started).not.toHaveProperty("board");
+    expect(started.minesweeperGame?.status).toBe("playing");
+  });
 });
 
 describe("Seotda room start validation", () => {

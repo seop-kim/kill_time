@@ -1,6 +1,6 @@
-export const MINESWEEPER_COLUMNS = 30;
-export const MINESWEEPER_ROWS = 16;
-export const MINESWEEPER_MINE_COUNT = 99;
+export const MINESWEEPER_COLUMNS = 64;
+export const MINESWEEPER_ROWS = 40;
+export const MINESWEEPER_MINE_COUNT = 528;
 
 export type MinesweeperStatus = "waiting" | "playing" | "won" | "lost";
 
@@ -102,6 +102,10 @@ export function countAdjacentMines(game: MinesweeperGame, row: number, col: numb
 
 export function getRemainingMineCount(game: MinesweeperGame): number {
   return Math.max(0, MINESWEEPER_MINE_COUNT - game.flagged.length);
+}
+
+export function getMinesweeperElapsedSeconds(game: MinesweeperGame, now = Date.now()): number {
+  return Math.max(0, Math.floor(((game.finishedAt ?? now) - game.startedAt) / 1_000));
 }
 
 function openSafeCells(game: MinesweeperGame, startKey: string): string[] {

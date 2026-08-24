@@ -206,11 +206,11 @@ export function startMinesweeperRoom(room: Room, matchId: string, seed: number, 
     status: "playing",
     winner: null,
     lastMove: null,
-    board: undefined,
     gameStartedAt: now,
     turnStartedAt: now,
     minesweeperGame: createMinesweeperGame(matchId, seed, now),
   };
+  delete nextRoom.board;
   delete nextRoom.seotdaGame;
   delete nextRoom.girinGame;
   delete nextRoom.matchRequests;

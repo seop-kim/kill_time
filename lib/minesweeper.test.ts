@@ -5,6 +5,7 @@ import {
   MINESWEEPER_ROWS,
   countAdjacentMines,
   createMinesweeperGame,
+  getMinesweeperElapsedSeconds,
   getRemainingMineCount,
   openMinesweeperCell,
   toggleMinesweeperFlag,
@@ -14,7 +15,7 @@ describe("Minesweeper game setup", () => {
   it("creates a fixed expert board before the first cell is opened", () => {
     const game = createMinesweeperGame("mine-1", 12_345, 100);
 
-    expect([MINESWEEPER_COLUMNS, MINESWEEPER_ROWS, MINESWEEPER_MINE_COUNT]).toEqual([30, 16, 99]);
+    expect([MINESWEEPER_COLUMNS, MINESWEEPER_ROWS, MINESWEEPER_MINE_COUNT]).toEqual([64, 40, 528]);
     expect(game).toMatchObject({
       matchId: "mine-1",
       seed: 12_345,
@@ -24,6 +25,16 @@ describe("Minesweeper game setup", () => {
       opened: [],
       flagged: [],
     });
+  });
+});
+
+describe("Minesweeper elapsed time", () => {
+  it("counts while playing and freezes when the board is finished", () => {
+    const playing = createMinesweeperGame("mine-1", 1, 1_000);
+    const finished = { ...playing, status: "won" as const, finishedAt: 4_200 };
+
+    expect(getMinesweeperElapsedSeconds(playing, 2_900)).toBe(1);
+    expect(getMinesweeperElapsedSeconds(finished, 99_000)).toBe(3);
   });
 });
 
@@ -87,6 +98,6 @@ describe("Minesweeper resolution", () => {
     expect(lost.status).toBe("lost");
     expect(lost.finishedAt).toBe(101);
     expect(lost.opened).toEqual(expect.arrayContaining(["0:0", "0:1"]));
-    expect(getRemainingMineCount(lost)).toBe(98);
+    expect(getRemainingMineCount(lost)).toBe(MINESWEEPER_MINE_COUNT - 1);
   });
 });
