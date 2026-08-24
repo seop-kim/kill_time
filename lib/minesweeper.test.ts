@@ -53,6 +53,21 @@ describe("Minesweeper first open", () => {
     expect(opened.firstOpened).toBe("8:15");
     expect(opened.opened).toContain("8:15");
   });
+
+  it("recovers a persisted board whose empty cell lists were omitted", () => {
+    const incomplete = {
+      ...createMinesweeperGame("mine-1", 12_345, 100),
+      mines: undefined,
+      opened: undefined,
+      flagged: undefined,
+    } as unknown as ReturnType<typeof createMinesweeperGame>;
+
+    const opened = openMinesweeperCell(incomplete, 8, 15, 101);
+
+    expect(opened.mines).toHaveLength(MINESWEEPER_MINE_COUNT);
+    expect(opened.opened).toContain("8:15");
+    expect(opened.flagged).toEqual([]);
+  });
 });
 
 describe("Minesweeper flags", () => {

@@ -5,6 +5,7 @@ import {
   MINESWEEPER_COLUMNS,
   MINESWEEPER_ROWS,
   minesweeperCellKey,
+  normalizeMinesweeperGame,
   type MinesweeperGame,
 } from "../lib/minesweeper";
 import { columnLabel } from "../lib/columnLabel";
@@ -26,8 +27,9 @@ export function MinesweeperGamePanel({
   onOpenCell: (row: number, col: number) => void;
   onToggleFlag: (row: number, col: number) => void;
 }) {
-  const isPlaying = game?.status === "playing";
-  const openedSet = new Set(game?.opened ?? []);
+  const normalizedGame = game ? normalizeMinesweeperGame(game) : null;
+  const isPlaying = normalizedGame?.status === "playing";
+  const openedSet = new Set(normalizedGame?.opened ?? []);
 
   return (
     <div className="h-full overflow-auto bg-white">
@@ -52,7 +54,7 @@ export function MinesweeperGamePanel({
             {Array.from({ length: MINESWEEPER_COLUMNS }, (_, col) => {
               const key = minesweeperCellKey(row, col);
               const isOpened = openedSet.has(key);
-              const cellContent = game ? getCellContent(game, row, col) : "";
+              const cellContent = normalizedGame ? getCellContent(normalizedGame, row, col) : "";
               return (
                 <button
                   key={key}

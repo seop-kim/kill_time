@@ -20,6 +20,26 @@ export function minesweeperCellKey(row: number, col: number): string {
   return `${row}:${col}`;
 }
 
+function normalizeMinesweeperCellList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.every((cell) => typeof cell === "string") ? value : value.filter((cell): cell is string => typeof cell === "string");
+  if (value && typeof value === "object") return Object.values(value).filter((cell): cell is string => typeof cell === "string");
+  return [];
+}
+
+/** Realtime Database may omit empty arrays, so normalize persisted board lists at every read boundary. */
+export function normalizeMinesweeperGame(game: MinesweeperGame): MinesweeperGame {
+  const mines = normalizeMinesweeperCellList(game.mines);
+  const opened = normalizeMinesweeperCellList(game.opened);
+  const flagged = normalizeMinesweeperCellList(game.flagged);
+  if (mines === game.mines && opened === game.opened && flagged === game.flagged) return game;
+  return {
+    ...game,
+    mines,
+    opened,
+    flagged,
+  };
+}
+
 export function isMinesweeperCellInBounds(row: number, col: number): boolean {
   return row >= 0 && row < MINESWEEPER_ROWS && col >= 0 && col < MINESWEEPER_COLUMNS;
 }
@@ -96,12 +116,12 @@ export function createMinesweeperGame(matchId: string, seed: number, now = Date.
 
 export function countAdjacentMines(game: MinesweeperGame, row: number, col: number): number {
   if (!isMinesweeperCellInBounds(row, col)) return 0;
-  const mineSet = new Set(game.mines);
+  const mineSet = new Set(normalizeMinesweeperCellList(game.mines));
   return getNeighborCells(row, col).filter((cell) => mineSet.has(minesweeperCellKey(cell.row, cell.col))).length;
 }
 
 export function getRemainingMineCount(game: MinesweeperGame): number {
-  return Math.max(0, MINESWEEPER_MINE_COUNT - game.flagged.length);
+  return Math.max(0, MINESWEEPER_MINE_COUNT - normalizeMinesweeperCellList(game.flagged).length);
 }
 
 export function getMinesweeperElapsedSeconds(game: MinesweeperGame, now = Date.now()): number {
@@ -131,29 +151,30 @@ function openSafeCells(game: MinesweeperGame, startKey: string): string[] {
 }
 
 export function openMinesweeperCell(game: MinesweeperGame, row: number, col: number, now = Date.now()): MinesweeperGame {
-  if (game.status !== "playing" || !isMinesweeperCellInBounds(row, col)) return game;
+  const normalizedGame = normalizeMinesweeperGame(game);
+  if (normalizedGame.status !== "playing" || !isMinesweeperCellInBounds(row, col)) return normalizedGame;
   const key = minesweeperCellKey(row, col);
-  if (game.opened.includes(key) || game.flagged.includes(key)) return game;
+  if (normalizedGame.opened.includes(key) || normalizedGame.flagged.includes(key)) return normalizedGame;
 
-  const mines = game.mines.length > 0 ? game.mines : createMineKeys(game.seed, row, col);
-  const firstOpened = game.firstOpened ?? key;
+  const mines = normalizedGame.mines.length > 0 ? normalizedGame.mines : createMineKeys(normalizedGame.seed, row, col);
+  const firstOpened = normalizedGame.firstOpened ?? key;
   if (mines.includes(key)) {
     return {
-      ...game,
+      ...normalizedGame,
       mines,
       firstOpened,
-      opened: [...new Set([...game.opened, ...mines])],
+      opened: [...new Set([...normalizedGame.opened, ...mines])],
       status: "lost",
       finishedAt: now,
     };
   }
 
-  const opened = openSafeCells({ ...game, mines }, key);
+  const opened = openSafeCells({ ...normalizedGame, mines }, key);
   const safeCellCount = MINESWEEPER_COLUMNS * MINESWEEPER_ROWS - mines.length;
   const won = opened.length === safeCellCount;
 
   return {
-    ...game,
+    ...normalizedGame,
     mines,
     firstOpened,
     opened,
@@ -162,12 +183,13 @@ export function openMinesweeperCell(game: MinesweeperGame, row: number, col: num
 }
 
 export function toggleMinesweeperFlag(game: MinesweeperGame, row: number, col: number): MinesweeperGame {
-  if (game.status !== "playing" || !isMinesweeperCellInBounds(row, col)) return game;
+  const normalizedGame = normalizeMinesweeperGame(game);
+  if (normalizedGame.status !== "playing" || !isMinesweeperCellInBounds(row, col)) return normalizedGame;
   const key = minesweeperCellKey(row, col);
-  if (game.opened.includes(key)) return game;
-  if (game.flagged.includes(key)) {
-    return { ...game, flagged: game.flagged.filter((flaggedKey) => flaggedKey !== key) };
+  if (normalizedGame.opened.includes(key)) return normalizedGame;
+  if (normalizedGame.flagged.includes(key)) {
+    return { ...normalizedGame, flagged: normalizedGame.flagged.filter((flaggedKey) => flaggedKey !== key) };
   }
-  if (game.flagged.length >= MINESWEEPER_MINE_COUNT) return game;
-  return { ...game, flagged: [...game.flagged, key] };
+  if (normalizedGame.flagged.length >= MINESWEEPER_MINE_COUNT) return normalizedGame;
+  return { ...normalizedGame, flagged: [...normalizedGame.flagged, key] };
 }

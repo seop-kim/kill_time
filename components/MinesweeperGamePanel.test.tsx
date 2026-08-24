@@ -20,4 +20,17 @@ describe("MinesweeperGamePanel", () => {
     expect(markup).not.toContain("남은 지뢰");
     expect(markup).not.toContain("경과 시간");
   });
+
+  it("renders an existing board even when Firebase omitted empty cell lists", () => {
+    const incompleteGame = {
+      ...createMinesweeperGame("mine-1", 1, 100),
+      mines: undefined,
+      opened: undefined,
+      flagged: undefined,
+    } as unknown as ReturnType<typeof createMinesweeperGame>;
+
+    expect(() => renderToStaticMarkup(
+      <MinesweeperGamePanel game={incompleteGame} onOpenCell={() => {}} onToggleFlag={() => {}} />,
+    )).not.toThrow();
+  });
 });
