@@ -57,10 +57,10 @@ export function DocumentSettingsDialog({
               onChange={(event) => onGameChange(event.target.value as RoomGameId)}
               className="h-[30px] rounded-sm border border-[#c8c8c8] bg-white px-2 text-[12px] outline-none focus:border-[#217346]"
             >
-              <option value="omok">오목</option>
-              <option value="girin">내가 그린 기린 그림</option>
-              <option value="seotda">Up</option>
-              <option value="minesweeper">지뢰찾기</option>
+              <option value="omok">[1:1] 오목</option>
+              <option value="girin">[N:M] 내가 그린 기린 그림</option>
+              <option value="seotda">[N:M (최대 6)] Up</option>
+              <option value="minesweeper">[솔로] 지뢰찾기</option>
             </select>
           </label>
 
