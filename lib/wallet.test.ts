@@ -39,8 +39,11 @@ describe("wallet helpers", () => {
     expect(() => applySeotdaStake({ coin: 0, money: 9_999 }, 10_000)).toThrow();
   });
 
-  it("uses the latest wallet snapshot for money actions", async () => {
-    const latest = await getWalletForAction("user-1", async () => ({ coin: 0, money: 10_000 }));
+  it("uses the wallet nested in the latest profile snapshot for money actions", async () => {
+    const latest = await getWalletForAction("user-1", async () => ({
+      nickname: "테스트",
+      wallet: { coin: 0, money: 10_000 },
+    }));
 
     expect(latest).toEqual({ coin: 0, money: 10_000 });
   });

@@ -5,7 +5,6 @@ function formatAmount(value: number): string {
 }
 
 const ACTION_LABELS: Record<SeotdaActionType, string> = {
-  check: "체크",
   bet: "삥",
   quarter: "쿼터",
   half: "하프",
@@ -52,7 +51,7 @@ export function SeotdaGamePanel({
   const ownRank = player?.hand.length === 2 ? evaluateSeotdaHand(player.hand as [typeof player.hand[number], typeof player.hand[number]]) : null;
 
   const ownHand = player?.hand ?? [];
-  const actionTypes: SeotdaActionType[] = ["check", "bet", "quarter", "half", "call", "raise", "all-in", "fold"];
+  const actionTypes: SeotdaActionType[] = ["bet", "quarter", "half", "call", "raise", "all-in", "fold"];
   const winnerNames = game?.winnerIds?.map((id) => game.players[id]?.name).filter(Boolean).join(", ") ?? "";
   const participantRows = Array.from({ length: 2 }, (_, rowIndex) => players.slice(rowIndex * 4, rowIndex * 4 + 4));
   const lastAction = game?.lastAction;
@@ -173,7 +172,7 @@ export function SeotdaGamePanel({
             </button>
           </div>
         ))}
-        <div data-seotda-field="turn-message" className="col-span-4 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-2 py-0.5 whitespace-nowrap text-[#777]">
+        <div data-seotda-field="turn-message" className="col-span-5 min-w-0 overflow-hidden border border-[#e8edf3] bg-white px-2 py-0.5 whitespace-nowrap text-[#777]">
           <div>{isMyTurn ? "내 차례입니다." : "상대방 차례입니다."}</div>
           <div data-seotda-field="action-help" className="truncate text-[9px] text-[#217346]">{actionHelp}</div>
         </div>

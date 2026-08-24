@@ -22,6 +22,7 @@ function formatAmount(value: number): string {
 export function WorkspaceHome({
   nickname,
   wallet,
+  walletLoaded = true,
   onCreateDocument,
   onOpenJoin,
   onOpenExchange,
@@ -29,6 +30,7 @@ export function WorkspaceHome({
 }: {
   nickname: string;
   wallet: WalletProfile;
+  walletLoaded?: boolean;
   onCreateDocument: () => void;
   onOpenJoin: () => void;
   onOpenExchange: () => void;
@@ -66,12 +68,12 @@ export function WorkspaceHome({
             <div className="sticky left-0 z-10 border border-[#d9e2f3] bg-[#f2f2f2] text-center text-[#49637a]">3</div>
             <WorkspaceCell className="px-2 py-1 text-[#555]">
               코인
-              <strong className="ml-2 text-[#333]">{formatAmount(wallet.coin)}</strong>
+              <strong className="ml-2 text-[#333]">{walletLoaded ? formatAmount(wallet.coin) : "불러오는 중..."}</strong>
             </WorkspaceCell>
             {Array.from({ length: 2 }, (_, index) => <WorkspaceCell key={`row-3-cell-${index + 1}`} />)}
             <WorkspaceCell className="px-2 py-1 text-[#555]">
               머니
-              <strong className="ml-2 text-[#333]">{formatAmount(wallet.money)}</strong>
+              <strong className="ml-2 text-[#333]">{walletLoaded ? formatAmount(wallet.money) : "불러오는 중..."}</strong>
             </WorkspaceCell>
             {Array.from({ length: 2 }, (_, index) => <WorkspaceCell key={`row-3-cell-${index + 4}`} />)}
             <WorkspaceCell />
