@@ -1,5 +1,7 @@
 export type AdminEconomySettings = {
   coinToMoneyRate: number;
+  /** Money required to receive one coin when exchanging in reverse. */
+  moneyToCoinRate: number;
   rewards: {
     omok: { win: number; loss: number; draw: number };
     girin: { answered: number; stumped: number };
@@ -9,6 +11,7 @@ export type AdminEconomySettings = {
 
 export const DEFAULT_ADMIN_ECONOMY_SETTINGS: AdminEconomySettings = {
   coinToMoneyRate: 100,
+  moneyToCoinRate: 95,
   rewards: {
     omok: { win: 300, loss: 100, draw: 200 },
     girin: { answered: 200, stumped: 500 },
@@ -39,6 +42,7 @@ export function normalizeAdminEconomySettings(value: unknown): AdminEconomySetti
 
   return {
     coinToMoneyRate: safeNonNegativeInteger(raw.coinToMoneyRate, DEFAULT_ADMIN_ECONOMY_SETTINGS.coinToMoneyRate, false),
+    moneyToCoinRate: safeNonNegativeInteger(raw.moneyToCoinRate, DEFAULT_ADMIN_ECONOMY_SETTINGS.moneyToCoinRate, false),
     rewards: {
       omok: {
         win: safeNonNegativeInteger(omok.win, DEFAULT_ADMIN_ECONOMY_SETTINGS.rewards.omok.win),

@@ -5,6 +5,7 @@ describe("administrator economy settings", () => {
   it("uses administrator-configured exchange and game rewards", () => {
     expect(normalizeAdminEconomySettings({
       coinToMoneyRate: 250,
+      moneyToCoinRate: 240,
       rewards: {
         omok: { win: 450, loss: 50, draw: 200 },
         girin: { answered: 320, stumped: 700 },
@@ -12,6 +13,7 @@ describe("administrator economy settings", () => {
       },
     })).toEqual({
       coinToMoneyRate: 250,
+      moneyToCoinRate: 240,
       rewards: {
         omok: { win: 450, loss: 50, draw: 200 },
         girin: { answered: 320, stumped: 700 },
@@ -23,6 +25,7 @@ describe("administrator economy settings", () => {
   it("keeps the last safe value for missing or invalid persisted values", () => {
     expect(normalizeAdminEconomySettings({
       coinToMoneyRate: -100,
+      moneyToCoinRate: 0,
       rewards: {
         omok: { win: "many", loss: -1 },
         girin: { answered: 100.5 },

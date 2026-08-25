@@ -17,6 +17,7 @@ import type { AdminEconomySettings } from "./adminEconomy";
 
 const customEconomySettings: AdminEconomySettings = {
   coinToMoneyRate: 250,
+  moneyToCoinRate: 240,
   rewards: {
     omok: { win: 450, loss: 50, draw: 200 },
     girin: { answered: 320, stumped: 700 },
@@ -35,9 +36,9 @@ describe("economy rules", () => {
     expect(COIN_TO_MONEY_RATE).toBe(100);
   });
 
-  it("converts only whole 100-money units back into coin", () => {
-    expect(exchangeMoneyToCoin({ coin: 0, money: 20_000 }, 10_000)).toEqual({ coin: 100, money: 10_000 });
-    expect(() => exchangeMoneyToCoin({ coin: 0, money: 9_999 }, 9_999)).toThrow();
+  it("uses the independently configured reverse exchange rate when money becomes coin", () => {
+    expect(exchangeMoneyToCoin({ coin: 0, money: 20_000 }, 9_500)).toEqual({ coin: 100, money: 10_500 });
+    expect(() => exchangeMoneyToCoin({ coin: 0, money: 9_499 }, 9_499)).toThrow();
   });
 
   it("returns the approved game rewards", () => {
@@ -52,7 +53,7 @@ describe("economy rules", () => {
 
   it("uses the administrator economy settings when they are supplied", () => {
     expect(exchangeCoinToMoney({ coin: 100, money: 0 }, 100, customEconomySettings)).toEqual({ coin: 0, money: 25_000 });
-    expect(exchangeMoneyToCoin({ coin: 0, money: 25_000 }, 25_000, customEconomySettings)).toEqual({ coin: 100, money: 0 });
+    expect(exchangeMoneyToCoin({ coin: 0, money: 24_000 }, 24_000, customEconomySettings)).toEqual({ coin: 100, money: 0 });
     expect(getOmokCoinReward("win", customEconomySettings)).toBe(450);
     expect(getGirinCoinReward("stumped", customEconomySettings)).toBe(700);
     expect(getMinesweeperCoinReward("won", customEconomySettings)).toBe(25);

@@ -78,7 +78,12 @@ export default function ExchangePage() {
       onNavigateHome={() => router.push("/workspace")}
       profileStats={profileStats}
     >
-      <ExchangeSheet wallet={wallet} onExchange={handleExchange} coinToMoneyRate={economySettings.coinToMoneyRate} />
+      <ExchangeSheet
+        wallet={wallet}
+        onExchange={handleExchange}
+        coinToMoneyRate={economySettings.coinToMoneyRate}
+        moneyToCoinRate={economySettings.moneyToCoinRate}
+      />
     </WorkspaceChrome>
   );
 }

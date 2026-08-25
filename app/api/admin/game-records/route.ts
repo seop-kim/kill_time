@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     records: await listGameRecords({
       gameId: params.get("gameId") ?? undefined,
       roomCode: params.get("roomCode") ?? undefined,
+      userId: params.get("userId") ?? undefined,
       limit: Number(params.get("limit") ?? "100"),
     }),
   });

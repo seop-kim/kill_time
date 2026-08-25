@@ -20,6 +20,19 @@ describe("ExchangeSheet", () => {
     expect(markup).not.toContain("허브로 돌아가기");
   });
 
+  it("shows the configured reverse exchange rate", () => {
+    const markup = renderToStaticMarkup(
+      <ExchangeSheet
+        wallet={{ coin: 300, money: 10_000 }}
+        onExchange={() => {}}
+        coinToMoneyRate={100}
+        moneyToCoinRate={95}
+      />,
+    );
+
+    expect(markup).toContain("95 money = 1 coin");
+  });
+
   it("keeps the exchange sheet as a fully populated neutral cell grid", () => {
     const markup = renderToStaticMarkup(
       <ExchangeSheet

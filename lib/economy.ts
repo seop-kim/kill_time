@@ -80,11 +80,12 @@ export function exchangeMoneyToCoin(
   settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
 ): WalletBalance {
   assertWalletAmount(wallet, "money", moneyAmount);
-  if (moneyAmount % settings.coinToMoneyRate !== 0) {
-    throw new Error(`${settings.coinToMoneyRate}머니 단위로만 코인으로 교환할 수 있습니다.`);
+  if (moneyAmount % settings.moneyToCoinRate !== 0) {
+    throw new Error(`${settings.moneyToCoinRate}머니 단위로만 코인으로 교환할 수 있습니다.`);
   }
+  const coinAmount = moneyAmount / settings.moneyToCoinRate;
   return {
-    coin: wallet.coin + moneyAmount / settings.coinToMoneyRate,
+    coin: wallet.coin + coinAmount,
     money: wallet.money - moneyAmount,
   };
 }

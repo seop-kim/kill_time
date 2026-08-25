@@ -25,19 +25,23 @@ export function ExchangeSheet({
   wallet,
   onExchange,
   coinToMoneyRate = 100,
+  moneyToCoinRate = 95,
 }: {
   wallet: WalletProfile;
   onExchange: (direction: ExchangeDirection, amount: number) => void | Promise<void>;
   coinToMoneyRate?: number;
+  moneyToCoinRate?: number;
 }) {
   const [direction, setDirection] = useState<ExchangeDirection>("coinToMoney");
   const [amount, setAmount] = useState("");
   const numericAmount = Number(amount);
-  const validAmount = Number.isInteger(numericAmount) && numericAmount > 0;
+  const validAmount = Number.isInteger(numericAmount) && numericAmount > 0 && (
+    direction === "coinToMoney" || numericAmount % moneyToCoinRate === 0
+  );
   const preview = validAmount
     ? direction === "coinToMoney"
       ? numericAmount * coinToMoneyRate
-      : numericAmount / coinToMoneyRate
+      : numericAmount / moneyToCoinRate
     : 0;
 
   return (
@@ -76,7 +80,8 @@ export function ExchangeSheet({
 
           <div className="border border-[#d9e2f3] bg-[#f2f2f2] text-center text-[#49637a]">4</div>
           <ExchangeCell>1 coin = {coinToMoneyRate} money</ExchangeCell>
-          {Array.from({ length: 3 }, (_, index) => <ExchangeCell key={`row-4-cell-${index + 1}`} />)}
+          <ExchangeCell>{moneyToCoinRate} money = 1 coin</ExchangeCell>
+          {Array.from({ length: 2 }, (_, index) => <ExchangeCell key={`row-4-cell-${index + 1}`} />)}
           <ExchangeCell className="flex items-center justify-center gap-1 whitespace-nowrap font-medium">
             <label htmlFor="exchange-amount">수량</label>
           </ExchangeCell>
