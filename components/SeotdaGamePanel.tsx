@@ -15,7 +15,7 @@ const ACTION_LABELS: Record<SeotdaActionType, string> = {
 };
 
 function statusLabel(game: SeotdaGame): string {
-  if (game.status === "finished") return "게임 종료";
+  if (game.status === "finished") return "처리 완료";
   if (game.status === "showdown") return "족보 확인 중";
   return `${game.round}차 베팅`;
 }
@@ -62,7 +62,7 @@ export function SeotdaGamePanel({
   const toCall = game && player ? Math.max(0, game.currentBet - player.committed) : 0;
   const legalActionText = legalActions.map((action) => ACTION_LABELS[action]).join(" · ");
   const actionHelp = !game
-    ? "게임 시작 후 선택할 수 있습니다."
+    ? "시작 후 선택할 수 있습니다."
     : !isMyTurn
       ? "상대방의 선택을 기다리는 중입니다."
       : toCall > 0
@@ -135,7 +135,7 @@ export function SeotdaGamePanel({
         ) : (
           <>
             <div data-seotda-field="status" className="col-span-3 min-w-0 border border-[#d9e2f3] bg-white px-2 py-1 font-semibold whitespace-nowrap text-[#333]">대기 중</div>
-            <div data-seotda-field="waiting-message" className="col-span-9 min-w-0 border border-[#d9e2f3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">방장이 게임을 시작하면 패가 배분됩니다.</div>
+            <div data-seotda-field="waiting-message" className="col-span-9 min-w-0 border border-[#d9e2f3] bg-white px-2 py-1 whitespace-nowrap text-[#555]">방장이 시작하면 패가 배분됩니다.</div>
           </>
         )}
 
@@ -181,11 +181,11 @@ export function SeotdaGamePanel({
         <div className="sticky left-0 z-10 border border-[#e8edf3] bg-[#f8f8f8] text-center text-[#789]">13</div>
         {game?.status === "finished" ? (
           <>
-            <div data-seotda-field="result" className="col-span-8 min-w-0 border border-[#d6c27a] bg-[#fff9df] px-2 py-1 font-semibold whitespace-nowrap text-[#7f6000]">{resultLabel(game, playerId)}</div>
+            <div data-seotda-field="result" className="col-span-8 min-w-0 border border-[#b7c9e2] bg-[#eaf2f8] px-2 py-1 font-semibold whitespace-nowrap text-[#1f4e79]">{resultLabel(game, playerId)}</div>
             <div data-seotda-field="winner" className="col-span-2 min-w-0 border border-[#e8edf3] bg-white px-2 py-1 whitespace-nowrap text-[10px] text-[#555]">승자 {winnerNames || "-"}</div>
             <div data-seotda-field="rematch" className="col-span-2 min-w-0 border border-[#e8edf3] bg-white p-1">
               {onRematch ? (
-                <button type="button" onClick={onRematch} className="h-full w-full border border-[#217346] bg-[#217346] px-1 text-[11px] whitespace-nowrap text-white hover:bg-[#1a5c38]">다시 하기</button>
+                <button type="button" onClick={onRematch} className="h-full w-full border border-[#b7c9e2] bg-white px-1 text-[11px] font-semibold whitespace-nowrap text-[#1f4e79] hover:bg-[#eaf2f8]">다시 하기</button>
               ) : (
                 <span className="block px-1 py-1 text-center text-[10px] whitespace-nowrap text-[#777]">방장 재시작 대기</span>
               )}

@@ -134,7 +134,7 @@ describe("SeotdaGamePanel", () => {
   it("renders a waiting message when no Seotda game has started", () => {
     const markup = renderToStaticMarkup(<SeotdaGamePanel game={null} playerId="p1" onAction={() => {}} />);
 
-    expect(markup).toContain("방장이 게임을 시작하면 패가 배분됩니다.");
+    expect(markup).toContain("방장이 시작하면 패가 배분됩니다.");
   });
 
   it("shows the finished result and a rematch action", () => {

@@ -343,7 +343,7 @@ export default function RoomClient({ code }: { code: string }) {
     if (room.status === "playing" && prevStatusRef.current === "waiting") {
       showToast(
         activeGameId === "seotda"
-          ? "Up 게임을 시작했습니다. 패가 배분되었습니다."
+          ? "Up을 시작했습니다. 패가 배분되었습니다."
           : activeGameId === "minesweeper"
             ? "지뢰찾기를 시작했습니다. 첫 칸과 주변 칸은 안전합니다."
             : "대진이 성사되어 게임을 시작했습니다.",
@@ -864,7 +864,7 @@ export default function RoomClient({ code }: { code: string }) {
     if (!room || !identity) return;
     if (activeGameId === "seotda") {
       if (identity.role !== "host") {
-        showToast("방장만 Up 게임을 시작할 수 있습니다.", "info");
+        showToast("방장만 Up을 시작할 수 있습니다.", "info");
         return;
       }
       if (room.status !== "waiting") {
@@ -940,13 +940,13 @@ export default function RoomClient({ code }: { code: string }) {
           } else if (result.reason === "not-enough-players") {
             showToast("두 명 이상 참여해야 Up을 시작할 수 있습니다.", "info");
           } else {
-            showToast("Up 게임을 시작할 수 없는 상태입니다.", "info");
+            showToast("Up을 시작할 수 없는 상태입니다.", "info");
           }
           return;
         }
-        showToast("Up 게임을 시작했습니다. 패가 배분되었습니다.", "info");
+        showToast("Up을 시작했습니다. 패가 배분되었습니다.", "info");
       } catch (error) {
-      showToast(error instanceof Error ? error.message : "Up 게임을 시작하지 못했습니다.", "error");
+      showToast(error instanceof Error ? error.message : "Up을 시작하지 못했습니다.", "error");
       }
       return;
     }
@@ -1108,7 +1108,7 @@ export default function RoomClient({ code }: { code: string }) {
       await rematchSeotda(code);
       showToast("다시 대결할 수 있도록 대기 상태로 돌아갔습니다.", "info");
     } catch {
-      showToast("Up 게임을 다시 시작하지 못했습니다.", "error");
+      showToast("Up을 다시 시작하지 못했습니다.", "error");
     }
   }
 
@@ -1493,7 +1493,7 @@ export default function RoomClient({ code }: { code: string }) {
         }
         rematchLabel={activeGameId === "seotda" || activeGameId === "minesweeper" ? "다시 하기" : "새 버전으로 계속"}
         onStartGame={canStartGame ? requestStartGame : undefined}
-        startActionLabel={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" ? "게임 시작" : "대진 참여"}
+        startActionLabel={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" ? "시작" : "대진 참여"}
         onRestart={currentGameStatus === "finished" && identity.role === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
         onDocumentSettings={identity.role === "host" ? openDocumentSettings : undefined}
@@ -1655,7 +1655,7 @@ export default function RoomClient({ code }: { code: string }) {
         open={startConfirmOpen}
         onConfirm={handleConfirmStartGame}
         onCancel={() => setStartConfirmOpen(false)}
-        title={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" ? "게임을 시작하시겠습니까?" : "대진에 참여하시겠습니까?"}
+        title={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" ? "시작하시겠습니까?" : "대진에 참여하시겠습니까?"}
         description={
           activeGameId === "girin"
             ? "방의 모든 참여자가 게임에 참여하고, 순번이 무작위로 정해집니다."
@@ -1743,7 +1743,7 @@ export default function RoomClient({ code }: { code: string }) {
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center px-4">
           <div className="bg-white rounded-sm shadow-lg w-[384px] px-5 py-4">
             <p className="text-[13px] text-[#333] leading-relaxed">
-              게임이 진행 중입니다. 지금 나가시면 패배 처리됩니다. 나가시겠습니까?
+              작업이 진행 중입니다. 지금 나가시면 패배 처리됩니다. 나가시겠습니까?
             </p>
             <div className="flex justify-end gap-2 mt-4">
               <button
