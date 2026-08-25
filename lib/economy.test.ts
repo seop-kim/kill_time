@@ -13,6 +13,16 @@ import {
   SEOTDA_STAKE_MIN,
   validateStake,
 } from "./economy";
+import type { AdminEconomySettings } from "./adminEconomy";
+
+const customEconomySettings: AdminEconomySettings = {
+  coinToMoneyRate: 250,
+  rewards: {
+    omok: { win: 450, loss: 50, draw: 200 },
+    girin: { answered: 320, stumped: 700 },
+    minesweeper: { won: 25, lost: 3 },
+  },
+};
 
 describe("economy rules", () => {
   it("requires enough money for a Seotda stake", () => {
@@ -38,6 +48,15 @@ describe("economy rules", () => {
     expect(getGirinCoinReward("stumped")).toBe(500);
     expect(getMinesweeperCoinReward("won")).toBe(10);
     expect(getMinesweeperCoinReward("lost")).toBe(0);
+  });
+
+  it("uses the administrator economy settings when they are supplied", () => {
+    expect(exchangeCoinToMoney({ coin: 100, money: 0 }, 100, customEconomySettings)).toEqual({ coin: 0, money: 25_000 });
+    expect(exchangeMoneyToCoin({ coin: 0, money: 25_000 }, 25_000, customEconomySettings)).toEqual({ coin: 100, money: 0 });
+    expect(getOmokCoinReward("win", customEconomySettings)).toBe(450);
+    expect(getGirinCoinReward("stumped", customEconomySettings)).toBe(700);
+    expect(getMinesweeperCoinReward("won", customEconomySettings)).toBe(25);
+    expect(getMinesweeperCoinReward("lost", customEconomySettings)).toBe(3);
   });
 
   it("rejects the entire stake when any player is short", () => {

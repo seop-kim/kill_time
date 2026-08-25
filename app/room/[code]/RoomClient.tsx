@@ -57,7 +57,7 @@ import {
   type Room,
   type RoomGameId,
 } from "@/lib/rooms";
-import { SEOTDA_STAKE_MIN } from "@/lib/economy";
+import { SEOTDA_STAKE_MIN, getGirinCoinReward, getMinesweeperCoinReward, getOmokCoinReward } from "@/lib/economy";
 import {
   addGirinPixels,
   advanceGirinRoundInRoom,
@@ -70,8 +70,9 @@ import {
   submitGirinPromptToRoom,
   type GirinGame,
 } from "@/lib/girin";
-import { getGirinCoinReward, getMinesweeperCoinReward, getOmokCoinReward } from "@/lib/economy";
 import { exchangeCoinMoney, getWalletForAction, settleCoinReward, settleSeotdaMatch, subscribeWallet, type WalletProfile } from "@/lib/wallet";
+import { DEFAULT_ADMIN_ECONOMY_SETTINGS, type AdminEconomySettings } from "@/lib/adminEconomy";
+import { loadPublicEconomySettings } from "@/lib/publicEconomy";
 import { QuickExchangeDialog } from "@/components/QuickExchangeDialog";
 import { getOrCreateUserId, loadIdentity, saveIdentity, type StoredIdentity } from "@/lib/identity";
 import {
@@ -204,6 +205,7 @@ export default function RoomClient({ code }: { code: string }) {
   const [drawingClearVersion, setDrawingClearVersion] = useState(0);
   const [sensitiveMode, setSensitiveMode] = useState(false);
   const [participantMoney, setParticipantMoney] = useState<Record<string, number>>({});
+  const [economySettings, setEconomySettings] = useState<AdminEconomySettings>(DEFAULT_ADMIN_ECONOMY_SETTINGS);
 
   const prevStatusRef = useRef<Room["status"] | null>(null);
   const statsAttemptedRef = useRef<string | null>(null);
@@ -221,6 +223,7 @@ export default function RoomClient({ code }: { code: string }) {
   const prevOpponentOnlineRef = useRef<boolean | undefined>(undefined);
   const centeredOnceRef = useRef(false);
   const kickedOutRef = useRef(false);
+  const archivedGameRef = useRef<string | null>(null);
 
   const effectiveRole = room && identity ? effectiveRoleOf(identity, room) : null;
   const playerRole: PlayerRole | null = effectiveRole === "host" || effectiveRole === "guest" ? effectiveRole : null;
@@ -246,6 +249,37 @@ export default function RoomClient({ code }: { code: string }) {
     if (loaded.userId !== userId) saveIdentity(code, upgraded);
     setIdentity(upgraded);
   }, [code]);
+
+  useEffect(() => {
+    let active = true;
+    loadPublicEconomySettings().then((settings) => {
+      if (active) setEconomySettings(settings);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!room || room.status !== "finished") {
+      archivedGameRef.current = null;
+      return;
+    }
+    const gameId = normalizeRoomGameId(room.gameId);
+    const matchId = gameId === "seotda"
+      ? room.seotdaGame?.matchId
+      : gameId === "girin"
+        ? room.girinGame?.startedAt
+        : gameId === "minesweeper"
+          ? room.minesweeperGame?.matchId
+          : room.gameStartedAt;
+    const archiveKey = `${gameId}:${matchId ?? "unknown"}`;
+    if (archivedGameRef.current === archiveKey) return;
+    archivedGameRef.current = archiveKey;
+    fetch("/api/game-records/archive", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ roomCode: code }),
+    }).catch(() => {});
+  }, [code, room]);
 
   useEffect(() => {
     const participants = room && activeGameId === "seotda"
@@ -415,7 +449,7 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("전적을 저장하지 못했습니다.", "error");
     });
 
-    const rewardAmount = getOmokCoinReward(result);
+    const rewardAmount = getOmokCoinReward(result, economySettings);
     const rewardKey = `omok:${resultId}`;
     if (!walletRewardAttemptedRef.current.has(rewardKey)) {
       walletRewardAttemptedRef.current.add(rewardKey);
@@ -425,7 +459,7 @@ export default function RoomClient({ code }: { code: string }) {
         })
         .catch(() => showToast("오목 코인 보상을 저장하지 못했습니다.", "error"));
     }
-  }, [activeGameId, code, identity, playerRole, room, roomHostId, showToast]);
+  }, [activeGameId, code, economySettings, identity, playerRole, room, roomHostId, showToast]);
 
   useEffect(() => {
     if (activeGameId !== "seotda" || room?.status !== "finished" || !identity?.userId || !room.seotdaGame) return;
@@ -481,7 +515,7 @@ export default function RoomClient({ code }: { code: string }) {
       showToast("전적을 저장하지 못했습니다.", "error");
     });
 
-    const rewardAmount = getMinesweeperCoinReward(game.status);
+    const rewardAmount = getMinesweeperCoinReward(game.status, economySettings);
     const rewardKey = `minesweeper:${resultId}`;
     if (rewardAmount > 0 && !walletRewardAttemptedRef.current.has(rewardKey)) {
       walletRewardAttemptedRef.current.add(rewardKey);
@@ -491,7 +525,7 @@ export default function RoomClient({ code }: { code: string }) {
         })
         .catch(() => showToast("지뢰찾기 코인 보상을 저장하지 못했습니다.", "error"));
     }
-  }, [activeGameId, code, identity, room?.minesweeperGame, showToast]);
+  }, [activeGameId, code, economySettings, identity, room?.minesweeperGame, showToast]);
 
   useEffect(() => {
     const game = room?.girinGame;
@@ -551,7 +585,7 @@ export default function RoomClient({ code }: { code: string }) {
     });
 
     if (roundResult.winnerId === participantId && (roundResult.outcome === "answered" || roundResult.outcome === "stumped")) {
-      const rewardAmount = getGirinCoinReward(roundResult.outcome);
+      const rewardAmount = getGirinCoinReward(roundResult.outcome, economySettings);
       const rewardKey = `girin:${resultId}:${participantId}`;
       if (!walletRewardAttemptedRef.current.has(rewardKey)) {
         walletRewardAttemptedRef.current.add(rewardKey);
@@ -562,7 +596,7 @@ export default function RoomClient({ code }: { code: string }) {
           .catch(() => showToast("기린게임 코인 보상을 저장하지 못했습니다.", "error"));
       }
     }
-  }, [code, identity, room?.girinGame, showToast]);
+  }, [code, economySettings, identity, room?.girinGame, showToast]);
 
   useEffect(() => {
     if (!room || !identity) return;
@@ -851,7 +885,7 @@ export default function RoomClient({ code }: { code: string }) {
     const trimmed = joinName.trim();
     setQuickExchangeBusy(true);
     try {
-      await exchangeCoinMoney(userId, "coinToMoney", coinAmount);
+      await exchangeCoinMoney(userId, "coinToMoney", coinAmount, Date.now(), economySettings);
       await attemptJoinAsGuest(userId, trimmed);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "환전을 처리하지 못했습니다.", "error");
@@ -1338,6 +1372,7 @@ export default function RoomClient({ code }: { code: string }) {
           confirmLabel="교환하고 입장"
           onClose={() => setQuickExchangeOpen(false)}
           onExchange={handleQuickExchangeConfirm}
+          coinToMoneyRate={economySettings.coinToMoneyRate}
         />
       </>
     );

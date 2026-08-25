@@ -8,4 +8,13 @@ describe("Realtime Database rules", () => {
     expect(rulesConfig.rules.rooms["$roomCode"][".read"]).toBe("auth != null");
     expect(rulesConfig.rules.rooms["$roomCode"][".write"]).toBe("auth != null");
   });
+
+  it("keeps administrator-only settings and archives inaccessible to browser clients", () => {
+    expect(rulesConfig.rules.adminSettings[".read"]).toBe(false);
+    expect(rulesConfig.rules.adminSettings[".write"]).toBe(false);
+    expect(rulesConfig.rules.adminAuditLogs[".read"]).toBe(false);
+    expect(rulesConfig.rules.adminAuditLogs[".write"]).toBe(false);
+    expect(rulesConfig.rules.gameLogs[".read"]).toBe(false);
+    expect(rulesConfig.rules.gameLogs[".write"]).toBe(false);
+  });
 });

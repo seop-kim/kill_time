@@ -7,6 +7,7 @@ import {
   type Currency,
   type WalletBalance,
 } from "./economy";
+import { DEFAULT_ADMIN_ECONOMY_SETTINGS, type AdminEconomySettings } from "./adminEconomy";
 
 export type WalletProfile = WalletBalance;
 
@@ -306,6 +307,7 @@ export async function exchangeCoinMoney(
   direction: "coinToMoney" | "moneyToCoin",
   amount: number,
   now = Date.now(),
+  settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
 ): Promise<void> {
   const operationRef = push(ref(getDb(), `walletExchanges/${userId}`));
   if (!operationRef.key) throw new Error("환전 거래 키를 생성하지 못했습니다.");
@@ -315,8 +317,8 @@ export async function exchangeCoinMoney(
     const profile = asRecord(current) as WalletProfileNode;
     const wallet = normalizeWallet(profile.wallet);
     const nextWallet = direction === "coinToMoney"
-      ? exchangeCoinToMoney(wallet, amount)
-      : exchangeMoneyToCoin(wallet, amount);
+      ? exchangeCoinToMoney(wallet, amount, settings)
+      : exchangeMoneyToCoin(wallet, amount, settings);
     const coinDelta = nextWallet.coin - wallet.coin;
     const moneyDelta = nextWallet.money - wallet.money;
     return {
