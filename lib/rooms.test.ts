@@ -23,6 +23,7 @@ import {
   resetMinesweeperRoom,
   removeParticipantFromRoom,
   kickParticipantFromRoom,
+  resolveJoinRole,
   ROOM_HOME_PATH,
   startMinesweeperRoom,
   transferOfflineHost,
@@ -43,6 +44,24 @@ describe("Seotda room entry", () => {
     expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 9_999)).toBe(false);
     expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 10_000)).toBe(true);
     expect(canEnterRoomWithWallet({ gameId: "omok" }, 0)).toBe(true);
+  });
+});
+
+describe("joining a room mid-match", () => {
+  it("takes the empty guest slot only while the room is waiting", () => {
+    expect(resolveJoinRole({ guest: null, status: "waiting" })).toBe("guest");
+  });
+
+  it("joins as a spectator when the guest slot is empty but a match is already underway", () => {
+    // e.g. the previous guest left mid-game — the slot is empty, but a new
+    // joiner must not take it over and force the room back to "waiting"
+    // while the game itself is still playing (or just finished).
+    expect(resolveJoinRole({ guest: null, status: "playing" })).toBe("spectator");
+    expect(resolveJoinRole({ guest: null, status: "finished" })).toBe("spectator");
+  });
+
+  it("joins as a spectator when the guest slot is already taken", () => {
+    expect(resolveJoinRole({ guest: { id: "guest", name: "게스트" }, status: "waiting" })).toBe("spectator");
   });
 });
 

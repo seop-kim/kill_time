@@ -803,6 +803,19 @@ export type JoinResult =
   | { ok: true; role: "spectator"; participantId: string }
   | { ok: false; reason: JoinFailureReason };
 
+/**
+ * The guest slot only opens up while the room is genuinely waiting. If a
+ * match is already underway (or just finished and hasn't been reset), an
+ * empty guest slot means someone left mid-game — a new joiner must not take
+ * it over and force room.status back to "waiting", which would desync it
+ * from the still-in-progress (or finished) game state. They join as a
+ * spectator instead, watching live and eligible for the next match once the
+ * host resets the room.
+ */
+export function resolveJoinRole(room: Pick<Room, "guest" | "status">): "guest" | "spectator" {
+  return !room.guest && room.status === "waiting" ? "guest" : "spectator";
+}
+
 export async function joinRoom(code: string, guestName: string, walletMoney = 0, userId?: string): Promise<JoinResult> {
   const participantId = generateParticipantId();
   let result: JoinResult | null = null;
@@ -819,9 +832,8 @@ export async function joinRoom(code: string, guestName: string, walletMoney = 0,
       return currentRoom;
     }
 
-    if (!currentRoom.guest) {
+    if (resolveJoinRole(currentRoom) === "guest") {
       currentRoom.guest = { id: participantId, name: guestName, ...(userId ? { userId } : {}) };
-      currentRoom.status = "waiting";
       result = { ok: true, role: "guest", participantId };
     } else {
       currentRoom.spectators = currentRoom.spectators ?? {};

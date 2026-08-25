@@ -1310,25 +1310,36 @@ export default function RoomClient({ code }: { code: string }) {
 
   if (!identity) {
     return (
-      <div className="flex-1 flex items-center justify-center px-4">
-        <div className="w-[384px] bg-white border border-[#d0d0d0] rounded-sm shadow-sm px-5 py-4 flex flex-col gap-3">
-          <p className="text-[13px] text-[#333]">이 문서에 접근하려면 표시 이름이 필요합니다.</p>
-          <input
-            value={joinName}
-            onChange={(e) => setJoinName(e.target.value)}
-            maxLength={8}
-            placeholder="예: 김철수"
-            className="border border-[#c8c8c8] rounded-sm px-2 py-1.5 text-[13px] outline-none focus:border-[#217346]"
-          />
-          <button
-            onClick={handleJoinAsGuest}
-            disabled={joining}
-            className="bg-[#217346] hover:bg-[#1a5c38] disabled:opacity-60 text-white text-[13px] rounded-sm py-2"
-          >
-            문서 열기
-          </button>
+      <>
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="w-[384px] bg-white border border-[#d0d0d0] rounded-sm shadow-sm px-5 py-4 flex flex-col gap-3">
+            <p className="text-[13px] text-[#333]">이 문서에 접근하려면 표시 이름이 필요합니다.</p>
+            <input
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              maxLength={8}
+              placeholder="예: 김철수"
+              className="border border-[#c8c8c8] rounded-sm px-2 py-1.5 text-[13px] outline-none focus:border-[#217346]"
+            />
+            <button
+              onClick={handleJoinAsGuest}
+              disabled={joining}
+              className="bg-[#217346] hover:bg-[#1a5c38] disabled:opacity-60 text-white text-[13px] rounded-sm py-2"
+            >
+              문서 열기
+            </button>
+          </div>
         </div>
-      </div>
+        <QuickExchangeDialog
+          open={quickExchangeOpen}
+          wallet={quickExchangeWallet}
+          requiredMoney={room?.moneyStake ?? SEOTDA_STAKE_MIN}
+          busy={quickExchangeBusy}
+          confirmLabel="교환하고 입장"
+          onClose={() => setQuickExchangeOpen(false)}
+          onExchange={handleQuickExchangeConfirm}
+        />
+      </>
     );
   }
 
