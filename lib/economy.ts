@@ -1,4 +1,6 @@
-export const COIN_TO_MONEY_RATE = 100;
+import { DEFAULT_ADMIN_ECONOMY_SETTINGS, type AdminEconomySettings } from "./adminEconomy";
+
+export const COIN_TO_MONEY_RATE = DEFAULT_ADMIN_ECONOMY_SETTINGS.coinToMoneyRate;
 export const DAILY_ATTENDANCE_COIN_REWARD = 500;
 export const SEOTDA_STAKE_MIN = 1;
 export const SEOTDA_STAKE_MAX = 1_000_000;
@@ -60,35 +62,52 @@ function assertWalletAmount(wallet: WalletBalance, currency: Currency, amount: n
   }
 }
 
-export function exchangeCoinToMoney(wallet: WalletBalance, coinAmount: number): WalletBalance {
+export function exchangeCoinToMoney(
+  wallet: WalletBalance,
+  coinAmount: number,
+  settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
+): WalletBalance {
   assertWalletAmount(wallet, "coin", coinAmount);
   return {
     coin: wallet.coin - coinAmount,
-    money: wallet.money + coinAmount * COIN_TO_MONEY_RATE,
+    money: wallet.money + coinAmount * settings.coinToMoneyRate,
   };
 }
 
-export function exchangeMoneyToCoin(wallet: WalletBalance, moneyAmount: number): WalletBalance {
+export function exchangeMoneyToCoin(
+  wallet: WalletBalance,
+  moneyAmount: number,
+  settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
+): WalletBalance {
   assertWalletAmount(wallet, "money", moneyAmount);
-  if (moneyAmount % COIN_TO_MONEY_RATE !== 0) {
-    throw new Error(`${COIN_TO_MONEY_RATE}머니 단위로만 코인으로 교환할 수 있습니다.`);
+  if (moneyAmount % settings.coinToMoneyRate !== 0) {
+    throw new Error(`${settings.coinToMoneyRate}머니 단위로만 코인으로 교환할 수 있습니다.`);
   }
   return {
-    coin: wallet.coin + moneyAmount / COIN_TO_MONEY_RATE,
+    coin: wallet.coin + moneyAmount / settings.coinToMoneyRate,
     money: wallet.money - moneyAmount,
   };
 }
 
-export function getOmokCoinReward(result: OmokRewardResult): number {
-  return result === "win" ? 300 : result === "loss" ? 100 : 200;
+export function getOmokCoinReward(
+  result: OmokRewardResult,
+  settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
+): number {
+  return settings.rewards.omok[result];
 }
 
-export function getGirinCoinReward(outcome: GirinRewardOutcome): number {
-  return outcome === "answered" ? 200 : 500;
+export function getGirinCoinReward(
+  outcome: GirinRewardOutcome,
+  settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
+): number {
+  return settings.rewards.girin[outcome];
 }
 
-export function getMinesweeperCoinReward(outcome: MinesweeperRewardOutcome): number {
-  return outcome === "won" ? 10 : 0;
+export function getMinesweeperCoinReward(
+  outcome: MinesweeperRewardOutcome,
+  settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
+): number {
+  return settings.rewards.minesweeper[outcome];
 }
 
 export function validateStake(

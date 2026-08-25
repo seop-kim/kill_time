@@ -24,9 +24,11 @@ function formatAmount(value: number): string {
 export function ExchangeSheet({
   wallet,
   onExchange,
+  coinToMoneyRate = 100,
 }: {
   wallet: WalletProfile;
   onExchange: (direction: ExchangeDirection, amount: number) => void | Promise<void>;
+  coinToMoneyRate?: number;
 }) {
   const [direction, setDirection] = useState<ExchangeDirection>("coinToMoney");
   const [amount, setAmount] = useState("");
@@ -34,8 +36,8 @@ export function ExchangeSheet({
   const validAmount = Number.isInteger(numericAmount) && numericAmount > 0;
   const preview = validAmount
     ? direction === "coinToMoney"
-      ? numericAmount * 100
-      : numericAmount / 100
+      ? numericAmount * coinToMoneyRate
+      : numericAmount / coinToMoneyRate
     : 0;
 
   return (
@@ -73,7 +75,7 @@ export function ExchangeSheet({
           {Array.from({ length: EXCHANGE_COLUMN_COUNT - 2 }, (_, index) => <ExchangeCell key={`row-3-cell-${index + 3}`} />)}
 
           <div className="border border-[#d9e2f3] bg-[#f2f2f2] text-center text-[#49637a]">4</div>
-          <ExchangeCell>1 coin = 100 money</ExchangeCell>
+          <ExchangeCell>1 coin = {coinToMoneyRate} money</ExchangeCell>
           {Array.from({ length: 3 }, (_, index) => <ExchangeCell key={`row-4-cell-${index + 1}`} />)}
           <ExchangeCell className="flex items-center justify-center gap-1 whitespace-nowrap font-medium">
             <label htmlFor="exchange-amount">수량</label>

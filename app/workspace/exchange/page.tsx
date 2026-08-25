@@ -9,6 +9,8 @@ import { WorkspaceChrome } from "@/components/WorkspaceChrome";
 import { useToast } from "@/components/Toast";
 import { ensureFirebaseAuth } from "@/lib/firebase";
 import { subscribeUserStats, type GameStats } from "@/lib/stats";
+import { DEFAULT_ADMIN_ECONOMY_SETTINGS, type AdminEconomySettings } from "@/lib/adminEconomy";
+import { loadPublicEconomySettings } from "@/lib/publicEconomy";
 
 export default function ExchangePage() {
   const router = useRouter();
@@ -17,6 +19,15 @@ export default function ExchangePage() {
   const [nickname, setNickname] = useState("");
   const [wallet, setWallet] = useState<WalletProfile>({ coin: 0, money: 0 });
   const [profileStats, setProfileStats] = useState<Record<string, GameStats>>({});
+  const [economySettings, setEconomySettings] = useState<AdminEconomySettings>(DEFAULT_ADMIN_ECONOMY_SETTINGS);
+
+  useEffect(() => {
+    let active = true;
+    loadPublicEconomySettings().then((settings) => {
+      if (active) setEconomySettings(settings);
+    });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const storedNickname = loadNickname();
@@ -51,7 +62,7 @@ export default function ExchangePage() {
   async function handleExchange(direction: ExchangeDirection, amount: number) {
     if (!userId) return;
     try {
-      await exchangeCoinMoney(userId, direction, amount);
+      await exchangeCoinMoney(userId, direction, amount, Date.now(), economySettings);
       setWallet(await getWalletForAction(userId));
       showToast("환전이 완료되었습니다.", "info");
     } catch (error) {
@@ -67,7 +78,7 @@ export default function ExchangePage() {
       onNavigateHome={() => router.push("/workspace")}
       profileStats={profileStats}
     >
-      <ExchangeSheet wallet={wallet} onExchange={handleExchange} />
+      <ExchangeSheet wallet={wallet} onExchange={handleExchange} coinToMoneyRate={economySettings.coinToMoneyRate} />
     </WorkspaceChrome>
   );
 }

@@ -29,6 +29,18 @@
         ".read": "auth != null",
         ".write": "auth != null"
       }
+    },
+    "adminSettings": {
+      ".read": false,
+      ".write": false
+    },
+    "adminAuditLogs": {
+      ".read": false,
+      ".write": false
+    },
+    "gameLogs": {
+      ".read": false,
+      ".write": false
     }
   }
 }

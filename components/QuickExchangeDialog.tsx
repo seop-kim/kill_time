@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { COIN_TO_MONEY_RATE } from "../lib/economy";
 import type { WalletProfile } from "../lib/wallet";
 
 function formatAmount(value: number): string {
@@ -16,6 +15,7 @@ export function QuickExchangeDialog({
   confirmLabel,
   onClose,
   onExchange,
+  coinToMoneyRate = 100,
 }: {
   open: boolean;
   wallet: WalletProfile;
@@ -24,9 +24,10 @@ export function QuickExchangeDialog({
   confirmLabel: string;
   onClose: () => void;
   onExchange: (coinAmount: number) => void;
+  coinToMoneyRate?: number;
 }) {
   const shortfall = Math.max(0, requiredMoney - wallet.money);
-  const suggestedCoin = Math.max(1, Math.ceil(shortfall / COIN_TO_MONEY_RATE));
+  const suggestedCoin = Math.max(1, Math.ceil(shortfall / coinToMoneyRate));
   const [coinAmount, setCoinAmount] = useState(String(suggestedCoin));
   // Re-seed the input each time the dialog opens for a (possibly new)
   // shortfall, without a useEffect: adjust state directly during render.
@@ -41,7 +42,7 @@ export function QuickExchangeDialog({
 
   const numericCoin = Number(coinAmount);
   const validCoin = Number.isInteger(numericCoin) && numericCoin > 0;
-  const previewMoney = validCoin ? wallet.money + numericCoin * COIN_TO_MONEY_RATE : wallet.money;
+  const previewMoney = validCoin ? wallet.money + numericCoin * coinToMoneyRate : wallet.money;
   const enoughCoin = wallet.coin >= numericCoin;
 
   return (
@@ -70,7 +71,7 @@ export function QuickExchangeDialog({
 
           <div className="flex justify-between text-[12px] text-[#555]">
             <span>보유 코인 <strong className="text-[#333]">{formatAmount(wallet.coin)}</strong></span>
-            <span>1 coin = {COIN_TO_MONEY_RATE} money</span>
+            <span>1 coin = {coinToMoneyRate} money</span>
           </div>
 
           <label className="flex flex-col gap-1" htmlFor="quick-exchange-amount">
