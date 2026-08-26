@@ -47,6 +47,7 @@ function getRecordIdentity(roomCode: string, gameId: RoomGameId, room: Room) {
   if (gameId === "seotda") return room.seotdaGame?.matchId ?? `${room.gameStartedAt ?? "unknown"}`;
   if (gameId === "girin") return `${room.girinGame?.startedAt ?? room.gameStartedAt ?? "unknown"}`;
   if (gameId === "minesweeper") return room.minesweeperGame?.matchId ?? `${room.gameStartedAt ?? "unknown"}`;
+  if (gameId === "numberBaseball") return `${room.gameStartedAt ?? "unknown"}`;
   return `${room.gameStartedAt ?? "unknown"}`;
 }
 
@@ -99,6 +100,23 @@ export function buildFinishedGameRecord(roomCode: string, room: Room, archivedAt
       finishedAt: room.minesweeperGame.finishedAt ?? archivedAt,
       participants: getStandardParticipants(room),
       outcome: { result: room.minesweeperGame.status },
+    };
+  }
+
+  if (gameId === "numberBaseball" && room.numberBaseballGame) {
+    const finishedAt = room.numberBaseballGame.finishedAt ?? archivedAt;
+    return {
+      id,
+      roomCode,
+      gameId,
+      startedAt,
+      finishedAt,
+      participants: getStandardParticipants(room),
+      outcome: {
+        winnerIds: room.numberBaseballGame.winnerId ? [room.numberBaseballGame.winnerId] : [],
+        rounds: room.numberBaseballGame.round,
+        reason: room.numberBaseballGame.finishReason ?? "draw",
+      },
     };
   }
 

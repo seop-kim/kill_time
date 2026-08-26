@@ -58,4 +58,41 @@ describe("finished game archive", () => {
       lastMove: null,
     })).toBeNull();
   });
+
+  it("archives a number baseball result without exposing the answer token", () => {
+    const record = buildFinishedGameRecord("NB1234", {
+      gameId: "numberBaseball",
+      host: { id: "p1", userId: "u1", name: "하나" },
+      guest: { id: "p2", userId: "u2", name: "둘" },
+      spectators: { p3: { id: "p3", userId: "u3", name: "셋" } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "finished",
+      winner: null,
+      lastMove: null,
+      gameStartedAt: 1_700_000_000_000,
+      numberBaseballGame: {
+        status: "finished",
+        answerToken: "encrypted-answer",
+        players: { p1: { id: "p1", name: "하나" }, p2: { id: "p2", name: "둘" }, p3: { id: "p3", name: "셋" } },
+        turnOrder: ["p2", "p1", "p3"],
+        currentTurnIndex: 1,
+        round: 2,
+        maxRounds: 5,
+        turnSeconds: 30,
+        guesses: [],
+        winnerId: "p2",
+        finishReason: "correct",
+        finishedAt: 1_700_000_000_500,
+      },
+    });
+
+    expect(record).toMatchObject({
+      id: "NB1234:numberBaseball:1700000000000",
+      gameId: "numberBaseball",
+      participants: [{ participantId: "p1" }, { participantId: "p2" }, { participantId: "p3" }],
+      outcome: { winnerIds: ["p2"], rounds: 2, reason: "correct" },
+    });
+    expect(JSON.stringify(record)).not.toContain("encrypted-answer");
+  });
 });

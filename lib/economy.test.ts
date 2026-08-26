@@ -7,6 +7,7 @@ import {
   canAffordSeotdaStake,
   getGirinCoinReward,
   getMinesweeperCoinReward,
+  getNumberBaseballCoinReward,
   getOmokCoinReward,
   normalizeSeotdaStake,
   SEOTDA_STAKE_MAX,
@@ -22,6 +23,7 @@ const customEconomySettings: AdminEconomySettings = {
     omok: { win: 450, loss: 50, draw: 200 },
     girin: { answered: 320, stumped: 700 },
     minesweeper: { won: 25, lost: 3 },
+    numberBaseball: { win: 450, loss: 50, draw: 200 },
   },
 };
 
@@ -49,6 +51,7 @@ describe("economy rules", () => {
     expect(getGirinCoinReward("stumped")).toBe(500);
     expect(getMinesweeperCoinReward("won")).toBe(10);
     expect(getMinesweeperCoinReward("lost")).toBe(0);
+    expect(getNumberBaseballCoinReward("win")).toBe(300);
   });
 
   it("uses the administrator economy settings when they are supplied", () => {
@@ -58,6 +61,7 @@ describe("economy rules", () => {
     expect(getGirinCoinReward("stumped", customEconomySettings)).toBe(700);
     expect(getMinesweeperCoinReward("won", customEconomySettings)).toBe(25);
     expect(getMinesweeperCoinReward("lost", customEconomySettings)).toBe(3);
+    expect(getNumberBaseballCoinReward("win", customEconomySettings)).toBe(450);
   });
 
   it("rejects the entire stake when any player is short", () => {

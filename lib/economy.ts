@@ -9,6 +9,7 @@ export type Currency = "coin" | "money";
 export type OmokRewardResult = "win" | "loss" | "draw";
 export type GirinRewardOutcome = "answered" | "stumped";
 export type MinesweeperRewardOutcome = "won" | "lost";
+export type NumberBaseballRewardResult = "win" | "loss" | "draw";
 
 export interface WalletBalance {
   coin: number;
@@ -109,6 +110,13 @@ export function getMinesweeperCoinReward(
   settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
 ): number {
   return settings.rewards.minesweeper[outcome];
+}
+
+export function getNumberBaseballCoinReward(
+  result: NumberBaseballRewardResult,
+  settings: AdminEconomySettings = DEFAULT_ADMIN_ECONOMY_SETTINGS,
+): number {
+  return settings.rewards.numberBaseball[result];
 }
 
 export function validateStake(

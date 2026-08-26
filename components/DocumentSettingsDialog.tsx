@@ -61,6 +61,7 @@ export function DocumentSettingsDialog({
               <option value="girin">[N:M] 내가 그린 기린 그림</option>
               <option value="seotda">[N:M (최대 6)] Up</option>
               <option value="minesweeper">[솔로] 지뢰찾기</option>
+              <option value="numberBaseball">[N:M (최대 3)] 숫자야구</option>
             </select>
           </label>
 

@@ -15,6 +15,7 @@ import {
   validateSeotdaStart,
   clearRoomIfEmpty,
   finishSoloGirinInRoom,
+  finishSoloNumberBaseballInRoom,
   buildChatLogUpdates,
   canEnterRoomWithWallet,
   applyMinesweeperOpen,
@@ -44,6 +45,56 @@ describe("Seotda room entry", () => {
     expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 9_999)).toBe(false);
     expect(canEnterRoomWithWallet({ gameId: "seotda", moneyStake: 10_000 }, 10_000)).toBe(true);
     expect(canEnterRoomWithWallet({ gameId: "omok" }, 0)).toBe(true);
+  });
+});
+
+describe("Number Baseball room capacity", () => {
+  it("recognizes number baseball and caps active participants at three", () => {
+    const room: Room = {
+      gameId: "numberBaseball",
+      host: { id: "host", name: "Host" },
+      guest: { id: "guest", name: "Guest" },
+      spectators: { third: { id: "third", name: "Third" } },
+      blackPlayer: "host",
+      turn: "black",
+      status: "waiting",
+      winner: null,
+      lastMove: null,
+    };
+
+    expect(normalizeRoomGameId("numberBaseball")).toBe("numberBaseball");
+    expect(isRoomFull(room)).toBe(true);
+  });
+
+  it("finishes a number baseball match when a player leaves", () => {
+    const room: Room = {
+      gameId: "numberBaseball",
+      host: { id: "host", name: "Host" },
+      guest: { id: "guest", name: "Guest" },
+      blackPlayer: "host",
+      turn: "black",
+      status: "playing",
+      winner: null,
+      lastMove: null,
+      numberBaseballGame: {
+        status: "playing",
+        answerToken: "encrypted",
+        players: { host: { id: "host", name: "Host" }, guest: { id: "guest", name: "Guest" } },
+        turnOrder: ["host", "guest"],
+        currentPlayerId: "host",
+        currentTurnIndex: 0,
+        round: 1,
+        maxRounds: 5,
+        turnSeconds: 30,
+        turnStartedAt: 100,
+        guesses: [],
+      },
+    };
+
+    const finished = finishSoloNumberBaseballInRoom({ ...room, guest: null }, 200);
+    expect(finished.status).toBe("finished");
+    expect(finished.numberBaseballGame?.winnerId).toBe("host");
+    expect(finished.numberBaseballGame?.finishReason).toBe("player_left");
   });
 });
 

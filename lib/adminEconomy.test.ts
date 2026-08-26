@@ -10,6 +10,7 @@ describe("administrator economy settings", () => {
         omok: { win: 450, loss: 50, draw: 200 },
         girin: { answered: 320, stumped: 700 },
         minesweeper: { won: 25, lost: 3 },
+        numberBaseball: { win: 450, loss: 50, draw: 200 },
       },
     })).toEqual({
       coinToMoneyRate: 250,
@@ -18,6 +19,7 @@ describe("administrator economy settings", () => {
         omok: { win: 450, loss: 50, draw: 200 },
         girin: { answered: 320, stumped: 700 },
         minesweeper: { won: 25, lost: 3 },
+        numberBaseball: { win: 450, loss: 50, draw: 200 },
       },
     });
   });
@@ -30,6 +32,7 @@ describe("administrator economy settings", () => {
         omok: { win: "many", loss: -1 },
         girin: { answered: 100.5 },
         minesweeper: { won: Number.POSITIVE_INFINITY },
+        numberBaseball: { win: -1 },
       },
     })).toEqual(DEFAULT_ADMIN_ECONOMY_SETTINGS);
   });

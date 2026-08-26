@@ -5,7 +5,8 @@ import { DEFAULT_ADMIN_ECONOMY_SETTINGS, type AdminEconomySettings } from "@/lib
 import { ExcelChrome, type ChromeAvatar, type GameTab } from "@/components/ExcelChrome";
 import { WorkCoverSheet } from "@/components/WorkCoverSheet";
 import { useToast } from "@/components/Toast";
-import { AdminMasterDetailSheet } from "@/components/AdminMasterDetailSheet";
+import { AdminCellSheet, AdminSheetArea } from "@/components/AdminCellSheet";
+import { ADMIN_SHEET_LAYOUT } from "@/lib/adminSheetLayout";
 
 type AdminTab = "economy" | "wallet" | "chat" | "records";
 type AdminUser = { userId: string; nickname: string; coin: number; money: number; games: Record<string, unknown> };
@@ -33,7 +34,7 @@ function formatAt(value: number) {
 }
 
 function formatGameId(gameId: string) {
-  return ({ omok: "오목", girin: "내가그린기린그림", seotda: "Up", minesweeper: "지뢰찾기" } as Record<string, string>)[gameId] ?? gameId;
+  return ({ omok: "오목", girin: "내가그린기린그림", seotda: "Up", minesweeper: "지뢰찾기", numberBaseball: "숫자야구" } as Record<string, string>)[gameId] ?? gameId;
 }
 
 function formatOutcome(outcome: Record<string, unknown>) {
@@ -41,37 +42,28 @@ function formatOutcome(outcome: Record<string, unknown>) {
   return entries.length ? entries.map(([key, value]) => key + ": " + (Array.isArray(value) ? value.join(", ") : String(value))).join(" · ") : "-";
 }
 
-function GridSheet({ children }: { children: ReactNode }) {
-  return (
-    <div className="relative flex-1 min-h-0 overflow-auto bg-white">
-      <div className="absolute inset-0 min-w-[1440px] min-h-[760px] bg-[linear-gradient(#e8edf3_1px,transparent_1px),linear-gradient(90deg,#e8edf3_1px,transparent_1px)] bg-[size:100%_26px,100px_100%]" />
-      <div className="relative min-w-[1440px] px-[50px] pt-[26px] pb-16">{children}</div>
-    </div>
-  );
-}
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="w-[900px] border border-[#b7c9e2] bg-white text-[13px] shadow-sm"><div className="border-b border-[#b7c9e2] bg-[#f2f6fb] px-3 py-[5px] font-semibold text-[#1f4e79]">{title}</div><div className="p-3">{children}</div></section>;
+  return <section className="h-full text-[13px]"><div className="flex h-[36px] items-center border-b-2 border-[#222] px-3 font-semibold text-[#222]">{title}</div><div>{children}</div></section>;
 }
 
-function Label({ children }: { children: ReactNode }) {
-  return <label className="flex items-center gap-2 whitespace-nowrap text-[12px] text-[#555]">{children}</label>;
+function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <label className={`flex min-w-0 items-center justify-between gap-2 whitespace-nowrap text-[12px] text-[#444] ${className}`}>{children}</label>;
 }
 
 function PaneHeading({ children }: { children: ReactNode }) {
-  return <div className="border-b border-[#b7c9e2] bg-[#f2f6fb] px-3 py-[5px] font-semibold text-[#1f4e79]">{children}</div>;
+  return <div className="flex h-[36px] items-center border-b-2 border-[#222] px-2 font-semibold text-[#222]">{children}</div>;
 }
 
 function DetailBlock({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="border-b border-[#d9e2f3] last:border-b-0"><div className="bg-[#f8fafc] px-3 py-1.5 font-semibold text-[#1f4e79]">{title}</div><div className="p-3">{children}</div></section>;
+  return <section className="border-b border-[#222] last:border-b-0"><div className="flex h-[34px] items-center border-b border-[#222] px-2 font-semibold text-[#222]">{title}</div><div className="p-2">{children}</div></section>;
 }
 
 function EmptyDetail({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-[560px] items-center justify-center text-[#777]">{children}</div>;
+  return <div className="flex h-full min-h-[200px] items-center justify-center text-[#777]">{children}</div>;
 }
 
 function DataTable({ children }: { children: ReactNode }) {
-  return <div className="max-h-[130px] overflow-auto border border-[#d9e2f3]"><table className="w-full border-collapse">{children}</table></div>;
+  return <div className="max-h-[118px] overflow-auto border border-[#222]"><table className="w-full border-collapse">{children}</table></div>;
 }
 
 export function AdminConsoleClient() {
@@ -298,7 +290,7 @@ export function AdminConsoleClient() {
         <input value={userQuery} onChange={(event) => setUserQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void handleFindUser(); }} placeholder="UUID 또는 표시 이름" className="h-7 min-w-0 flex-1 border border-[#bfbfbf] px-2 outline-none focus:border-[#217346]" />
         <button type="button" onClick={() => void handleFindUser()} className="h-7 border border-[#bfbfbf] px-2 hover:bg-[#f5f5f5]">조회</button>
       </div>
-      <div className="max-h-[510px] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {users.map((user) => <button key={user.userId} type="button" onClick={() => void selectUser(user.userId)} className={"block w-full border-b border-[#e3eaf4] px-3 py-2 text-left hover:bg-[#f8fbff] " + (selectedUserId === user.userId ? "bg-[#eaf7ee]" : "bg-white")}><span className="block font-medium text-[#222]">{user.nickname || "(이름 없음)"}</span><span className="mt-0.5 block truncate text-[11px] text-[#777]">{user.userId}</span><span className="mt-1 block text-[11px] text-[#555]">coin {formatAmount(user.coin)} · money {formatAmount(user.money)}</span></button>)}
         {users.length === 0 ? <p className="p-3 text-[#777]">표시할 사용자가 없습니다.</p> : null}
       </div>
@@ -308,7 +300,7 @@ export function AdminConsoleClient() {
   const chatMaster = (
     <>
       <PaneHeading>문서별 채팅 로그</PaneHeading>
-      <div className="max-h-[532px] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {chatRooms.map((room) => <button key={room.roomCode} type="button" onClick={() => void loadChatLogs(room.roomCode, "")} className={"block w-full border-b border-[#e3eaf4] px-3 py-2 text-left hover:bg-[#f8fbff] " + (selectedChatRoomCode === room.roomCode ? "bg-[#eaf7ee]" : "bg-white")}><span className="block font-medium text-[#222]">{room.roomCode} <span className="font-normal text-[#777]">({room.count})</span></span><span className="mt-0.5 block truncate text-[11px] text-[#777]">{room.preview || "(내용 없음)"}</span><span className="mt-1 block text-[11px] text-[#777]">{formatAt(room.latestAt)}</span></button>)}
         {chatRooms.length === 0 ? <p className="p-3 text-[#777]">저장된 채팅 로그가 없습니다.</p> : null}
       </div>
@@ -318,7 +310,7 @@ export function AdminConsoleClient() {
   const recordMaster = (
     <>
       <PaneHeading>문서별 게임 기록</PaneHeading>
-      <div className="max-h-[532px] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {recordRooms.map((room) => <button key={room.roomCode} type="button" onClick={() => void loadGameRecords(room.roomCode, recordGameId)} className={"block w-full border-b border-[#e3eaf4] px-3 py-2 text-left hover:bg-[#f8fbff] " + (selectedRecordRoomCode === room.roomCode ? "bg-[#eaf7ee]" : "bg-white")}><span className="block font-medium text-[#222]">{room.roomCode} <span className="font-normal text-[#777]">({room.count})</span></span><span className="mt-0.5 block text-[11px] text-[#777]">최근 게임: {formatGameId(room.preview)}</span><span className="mt-1 block text-[11px] text-[#777]">{formatAt(room.latestAt)}</span></button>)}
         {recordRooms.length === 0 ? <p className="p-3 text-[#777]">저장된 게임 기록이 없습니다.</p> : null}
       </div>
@@ -343,18 +335,42 @@ export function AdminConsoleClient() {
   ) : <EmptyDetail>왼쪽 목록에서 문서를 선택해 주세요.</EmptyDetail>;
 
   const recordDetailPane = selectedRecordRoomCode ? (
-    <><PaneHeading>{selectedRecordRoomCode} 게임 기록</PaneHeading><div className="flex gap-2 border-b border-[#d9e2f3] p-2"><select value={recordGameId} onChange={(event) => { const gameId = event.target.value; setRecordGameId(gameId); void loadGameRecords(selectedRecordRoomCode, gameId); }} className="h-7 border border-[#bfbfbf] px-2"><option value="">전체 게임</option><option value="omok">오목</option><option value="girin">내가그린기린그림</option><option value="seotda">Up</option><option value="minesweeper">지뢰찾기</option></select></div><div className="max-h-[470px] overflow-auto"><table className="w-full border-collapse"><thead className="sticky top-0 bg-[#f2f6fb] text-[#1f4e79]"><tr><th className="border p-1 text-left">종료 시각</th><th className="border p-1 text-left">게임</th><th className="border p-1 text-left">참여자</th><th className="border p-1 text-left">결과</th></tr></thead><tbody>{records.map((record) => <tr key={record.id}><td className="border px-2 py-1 whitespace-nowrap">{formatAt(record.finishedAt)}</td><td className="border px-2 py-1">{formatGameId(record.gameId)}</td><td className="border px-2 py-1">{record.participants.map((participant) => participant.name).join(", ")}</td><td className="border px-2 py-1">{formatOutcome(record.outcome)}</td></tr>)}{!loadingRecords && records.length === 0 ? <tr><td colSpan={4} className="border px-2 py-3 text-center text-[#777]">표시할 게임 기록이 없습니다.</td></tr> : null}</tbody></table>{loadingRecords ? <p className="p-3 text-[#777]">게임 기록을 불러오는 중입니다.</p> : null}</div></>
+    <><PaneHeading>{selectedRecordRoomCode} 게임 기록</PaneHeading><div className="flex gap-2 border-b border-[#d9e2f3] p-2"><select value={recordGameId} onChange={(event) => { const gameId = event.target.value; setRecordGameId(gameId); void loadGameRecords(selectedRecordRoomCode, gameId); }} className="h-7 border border-[#bfbfbf] px-2"><option value="">전체 게임</option><option value="omok">오목</option><option value="girin">내가그린기린그림</option><option value="seotda">Up</option><option value="minesweeper">지뢰찾기</option><option value="numberBaseball">숫자야구</option></select></div><div className="max-h-[470px] overflow-auto"><table className="w-full border-collapse"><thead className="sticky top-0 bg-[#f2f6fb] text-[#1f4e79]"><tr><th className="border p-1 text-left">종료 시각</th><th className="border p-1 text-left">게임</th><th className="border p-1 text-left">참여자</th><th className="border p-1 text-left">결과</th></tr></thead><tbody>{records.map((record) => <tr key={record.id}><td className="border px-2 py-1 whitespace-nowrap">{formatAt(record.finishedAt)}</td><td className="border px-2 py-1">{formatGameId(record.gameId)}</td><td className="border px-2 py-1">{record.participants.map((participant) => participant.name).join(", ")}</td><td className="border px-2 py-1">{formatOutcome(record.outcome)}</td></tr>)}{!loadingRecords && records.length === 0 ? <tr><td colSpan={4} className="border px-2 py-3 text-center text-[#777]">표시할 게임 기록이 없습니다.</td></tr> : null}</tbody></table>{loadingRecords ? <p className="p-3 text-[#777]">게임 기록을 불러오는 중입니다.</p> : null}</div></>
   ) : <EmptyDetail>왼쪽 목록에서 문서를 선택해 주세요.</EmptyDetail>;
+
+  const economySheet = (
+    <AdminSheetArea {...ADMIN_SHEET_LAYOUT.economy} className="border-2 border-[#222]">
+      <Section title="경제 설정">
+        <div className="grid grid-cols-3">
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">코인 → 머니 (1 coin)<span className="flex items-center gap-1"><input type="number" min={1} step={1} value={settings.coinToMoneyRate} onChange={(event) => setSettings({ ...settings, coinToMoneyRate: Number(event.target.value) })} className="h-7 w-20 border border-[#777] px-1 text-right outline-none focus:border-[#217346]" />money</span></Label>
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">머니 → 코인 (1 coin)<span className="flex items-center gap-1"><input type="number" min={1} step={1} value={settings.moneyToCoinRate} onChange={(event) => setSettings({ ...settings, moneyToCoinRate: Number(event.target.value) })} className="h-7 w-20 border border-[#777] px-1 text-right outline-none focus:border-[#217346]" />money</span></Label>
+          <div className="flex items-center border-b border-[#222] px-3 text-[11px] text-[#666]">두 환율은 독립적으로 설정됩니다.</div>
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">오목 승리<input type="number" min={0} value={settings.rewards.omok.win} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, omok: { ...settings.rewards.omok, win: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">오목 패배<input type="number" min={0} value={settings.rewards.omok.loss} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, omok: { ...settings.rewards.omok, loss: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-[#222] px-3">오목 무승부<input type="number" min={0} value={settings.rewards.omok.draw} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, omok: { ...settings.rewards.omok, draw: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">기린 정답<input type="number" min={0} value={settings.rewards.girin.answered} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, girin: { ...settings.rewards.girin, answered: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">기린 못 맞춤<input type="number" min={0} value={settings.rewards.girin.stumped} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, girin: { ...settings.rewards.girin, stumped: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-[#222] px-3">지뢰찾기 클리어<input type="number" min={0} value={settings.rewards.minesweeper.won} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, minesweeper: { ...settings.rewards.minesweeper, won: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-r border-[#222] px-3">지뢰찾기 실패<input type="number" min={0} value={settings.rewards.minesweeper.lost} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, minesweeper: { ...settings.rewards.minesweeper, lost: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">숫자야구 승리<input type="number" min={0} value={settings.rewards.numberBaseball.win} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, numberBaseball: { ...settings.rewards.numberBaseball, win: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-r border-[#222] px-3">숫자야구 패배<input type="number" min={0} value={settings.rewards.numberBaseball.loss} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, numberBaseball: { ...settings.rewards.numberBaseball, loss: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <Label className="h-[54px] border-b border-[#222] px-3">숫자야구 무승부<input type="number" min={0} value={settings.rewards.numberBaseball.draw} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, numberBaseball: { ...settings.rewards.numberBaseball, draw: Number(event.target.value) } } })} className="h-7 w-20 border border-[#777] px-1 text-right" /></Label>
+          <div className="col-span-2 flex items-center px-3 text-[11px] text-[#666]">저장 즉시 모든 일반 게임의 보상 기준에 적용됩니다.</div>
+        </div>
+        <div className="flex h-[54px] items-center border-t border-[#222] px-3"><button type="button" disabled={savingSettings} onClick={() => void handleSaveSettings()} className="h-8 border border-[#217346] px-5 text-[12px] font-semibold text-[#185c37] hover:bg-[#eaf7ee] disabled:opacity-60">저장</button></div>
+      </Section>
+    </AdminSheetArea>
+  );
 
   return (
     <ExcelChrome fileName="관리자_운영대장" avatars={[ADMIN_AVATAR]} profileAvatar={ADMIN_AVATAR} onShare={() => {}} games={ADMIN_TABS} activeGameId={activeTab} onSelectGame={(id) => setActiveTab(id as AdminTab)} onLeave={() => void handleLogout()} sensitiveMode={sensitiveMode} onToggleSensitivity={() => setSensitiveMode((current) => !current)}>
-      {sensitiveMode ? <WorkCoverSheet /> : <GridSheet>
-        {adminError ? <p className="mb-3 w-[1320px] border border-[#d13438] bg-[#fff5f5] px-3 py-2 text-[12px] text-[#a4262c]">{adminError}</p> : null}
-        {activeTab === "economy" ? <Section title="경제 설정"><div className="grid grid-cols-[220px_220px_220px] gap-x-4 gap-y-3"><Label>코인 → 머니 (1 coin) <input type="number" min={1} step={1} value={settings.coinToMoneyRate} onChange={(event) => setSettings({ ...settings, coinToMoneyRate: Number(event.target.value) })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right outline-none focus:border-[#217346]" /> money</Label><Label>머니 → 코인 (1 coin) <input type="number" min={1} step={1} value={settings.moneyToCoinRate} onChange={(event) => setSettings({ ...settings, moneyToCoinRate: Number(event.target.value) })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right outline-none focus:border-[#217346]" /> money</Label><span className="self-center text-[11px] text-[#777]">두 환율은 서로 독립적으로 설정됩니다.</span><Label>오목 승리 <input type="number" min={0} value={settings.rewards.omok.win} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, omok: { ...settings.rewards.omok, win: Number(event.target.value) } } })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right" /></Label><Label>오목 패배 <input type="number" min={0} value={settings.rewards.omok.loss} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, omok: { ...settings.rewards.omok, loss: Number(event.target.value) } } })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right" /></Label><Label>오목 무승부 <input type="number" min={0} value={settings.rewards.omok.draw} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, omok: { ...settings.rewards.omok, draw: Number(event.target.value) } } })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right" /></Label><Label>기린 정답 <input type="number" min={0} value={settings.rewards.girin.answered} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, girin: { ...settings.rewards.girin, answered: Number(event.target.value) } } })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right" /></Label><Label>기린 못 맞춤 <input type="number" min={0} value={settings.rewards.girin.stumped} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, girin: { ...settings.rewards.girin, stumped: Number(event.target.value) } } })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right" /></Label><Label>지뢰찾기 클리어 <input type="number" min={0} value={settings.rewards.minesweeper.won} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, minesweeper: { ...settings.rewards.minesweeper, won: Number(event.target.value) } } })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right" /></Label><Label>지뢰찾기 실패 <input type="number" min={0} value={settings.rewards.minesweeper.lost} onChange={(event) => setSettings({ ...settings, rewards: { ...settings.rewards, minesweeper: { ...settings.rewards.minesweeper, lost: Number(event.target.value) } } })} className="h-7 w-20 border border-[#bfbfbf] px-1 text-right" /></Label></div><button type="button" disabled={savingSettings} onClick={() => void handleSaveSettings()} className="mt-4 h-8 border border-[#217346] bg-[#eaf7ee] px-5 text-[12px] font-semibold text-[#185c37] hover:bg-[#d7f0df] disabled:opacity-60">저장</button></Section> : null}
-        {activeTab === "wallet" ? <AdminMasterDetailSheet master={userMaster} detail={userDetailPane} /> : null}
-        {activeTab === "chat" ? <AdminMasterDetailSheet master={chatMaster} detail={chatDetailPane} /> : null}
-        {activeTab === "records" ? <AdminMasterDetailSheet master={recordMaster} detail={recordDetailPane} /> : null}
-      </GridSheet>}
+      {sensitiveMode ? <WorkCoverSheet /> : <AdminCellSheet>
+        {adminError ? <AdminSheetArea col={1} row={27} colSpan={17} className="flex items-center border border-[#d13438] px-2 text-[#a4262c]">{adminError}</AdminSheetArea> : null}
+        {activeTab === "economy" ? economySheet : null}
+        {activeTab === "wallet" ? <><AdminSheetArea {...ADMIN_SHEET_LAYOUT.master} className="flex h-full flex-col border-2 border-[#222]">{userMaster}</AdminSheetArea><AdminSheetArea {...ADMIN_SHEET_LAYOUT.detail} className="h-full overflow-auto border-2 border-[#222]">{userDetailPane}</AdminSheetArea></> : null}
+        {activeTab === "chat" ? <><AdminSheetArea {...ADMIN_SHEET_LAYOUT.master} className="flex h-full flex-col border-2 border-[#222]">{chatMaster}</AdminSheetArea><AdminSheetArea {...ADMIN_SHEET_LAYOUT.detail} className="h-full overflow-auto border-2 border-[#222]">{chatDetailPane}</AdminSheetArea></> : null}
+        {activeTab === "records" ? <><AdminSheetArea {...ADMIN_SHEET_LAYOUT.master} className="flex h-full flex-col border-2 border-[#222]">{recordMaster}</AdminSheetArea><AdminSheetArea {...ADMIN_SHEET_LAYOUT.detail} className="h-full overflow-auto border-2 border-[#222]">{recordDetailPane}</AdminSheetArea></> : null}
+      </AdminCellSheet>}
     </ExcelChrome>
   );
 }

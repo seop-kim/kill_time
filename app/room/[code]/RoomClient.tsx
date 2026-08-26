@@ -57,7 +57,7 @@ import {
   type Room,
   type RoomGameId,
 } from "@/lib/rooms";
-import { SEOTDA_STAKE_MIN, getGirinCoinReward, getMinesweeperCoinReward, getOmokCoinReward } from "@/lib/economy";
+import { SEOTDA_STAKE_MIN, getGirinCoinReward, getMinesweeperCoinReward, getNumberBaseballCoinReward, getOmokCoinReward } from "@/lib/economy";
 import {
   addGirinPixels,
   advanceGirinRoundInRoom,
@@ -100,6 +100,8 @@ import { getSeotdaPayouts, getSeotdaRemainingSeconds } from "@/lib/seotda";
 import { getMinesweeperElapsedSeconds } from "@/lib/minesweeper";
 import { ErrorPage } from "@/components/ErrorPage";
 import { toggleChatOpen } from "@/lib/chat";
+import { restartNumberBaseball, startNumberBaseball, submitNumberBaseballGuess, timeoutNumberBaseballTurn } from "@/lib/numberBaseballClient";
+import { NumberBaseballGamePanel } from "@/components/NumberBaseballGamePanel";
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
 const ROWS = Array.from({ length: BOARD_SIZE }, (_, i) => i);
@@ -117,6 +119,7 @@ const GAMES: GameTab[] = [
   { id: "girin", label: "girin", available: true },
   { id: "seotda", label: "Up", available: true },
   { id: "minesweeper", label: "지뢰찾기", available: true },
+  { id: "numberBaseball", label: "숫자야구", available: true },
   { id: "baseball", label: "Baseball", available: false },
   { id: "janggi", label: "Janggi", available: false },
 ];
@@ -210,6 +213,7 @@ export default function RoomClient({ code }: { code: string }) {
   const prevStatusRef = useRef<Room["status"] | null>(null);
   const statsAttemptedRef = useRef<string | null>(null);
   const girinQuizAttemptedRef = useRef<string | null>(null);
+  const numberBaseballAttemptedRef = useRef<string | null>(null);
   const walletRewardAttemptedRef = useRef<Set<string>>(new Set());
   const prevGirinStatusRef = useRef<GirinGame["status"] | null>(null);
   const prevGirinGameRef = useRef<GirinGame | null>(null);
@@ -270,6 +274,8 @@ export default function RoomClient({ code }: { code: string }) {
         ? room.girinGame?.startedAt
         : gameId === "minesweeper"
           ? room.minesweeperGame?.matchId
+          : gameId === "numberBaseball"
+            ? room.gameStartedAt
           : room.gameStartedAt;
     const archiveKey = `${gameId}:${matchId ?? "unknown"}`;
     if (archivedGameRef.current === archiveKey) return;
@@ -380,6 +386,8 @@ export default function RoomClient({ code }: { code: string }) {
           ? "Up을 시작했습니다. 패가 배분되었습니다."
           : activeGameId === "minesweeper"
             ? "지뢰찾기를 시작했습니다. 첫 칸과 주변 칸은 안전합니다."
+            : activeGameId === "numberBaseball"
+              ? "숫자야구를 시작했습니다. 순서가 무작위로 정해졌습니다."
             : "대진이 성사되어 게임을 시작했습니다.",
         "info",
       );
@@ -403,6 +411,22 @@ export default function RoomClient({ code }: { code: string }) {
       if (activeGameId === "minesweeper") {
         showToast(
           room.minesweeperGame?.status === "won" ? "지뢰찾기를 클리어했습니다! 코인 10개를 받았습니다." : "지뢰를 밟았습니다. 다시 도전해 보세요.",
+          "info",
+          { placement: "top-center", emphasis: true },
+        );
+        prevStatusRef.current = room.status;
+        return;
+      }
+      if (activeGameId === "numberBaseball") {
+        const winnerId = room.numberBaseballGame?.winnerId;
+        const winnerName = winnerId ? room.numberBaseballGame?.players[winnerId]?.name : undefined;
+        const myId = identity?.role === "host" ? room.host.id ?? "host" : identity?.participantId;
+        showToast(
+          room.numberBaseballGame?.finishReason === "draw"
+            ? "숫자야구는 무승부입니다."
+            : winnerId === myId
+              ? "숫자야구에서 승리했습니다!"
+              : `${winnerName ?? "상대방"}님이 숫자야구에서 승리했습니다.`,
           "info",
           { placement: "top-center", emphasis: true },
         );
@@ -599,6 +623,32 @@ export default function RoomClient({ code }: { code: string }) {
   }, [code, economySettings, identity, room?.girinGame, showToast]);
 
   useEffect(() => {
+    const game = room?.numberBaseballGame;
+    if (activeGameId !== "numberBaseball" || room?.status !== "finished" || !game || !identity?.userId) return;
+    const participantId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+    if (!participantId || !game.players[participantId]) return;
+
+    const resultId = `numberBaseball:${code}:${room.gameStartedAt ?? game.finishedAt ?? "unknown"}`;
+    if (!shouldAttemptStatsRecord(numberBaseballAttemptedRef.current, resultId)) return;
+    const result = !game.winnerId ? "draw" : game.winnerId === participantId ? "win" : "loss";
+    numberBaseballAttemptedRef.current = resultId;
+    recordGameResult(identity.userId, identity.name, "numberBaseball", result, resultId).catch(() => {
+      showToast("전적을 저장하지 못했습니다.", "error");
+    });
+
+    const rewardAmount = getNumberBaseballCoinReward(result, economySettings);
+    const rewardKey = `numberBaseball:${resultId}`;
+    if (!walletRewardAttemptedRef.current.has(rewardKey)) {
+      walletRewardAttemptedRef.current.add(rewardKey);
+      settleCoinReward(identity.userId, "numberBaseball", resultId, rewardAmount)
+        .then((settled) => {
+          if (settled) showToast(`숫자야구 결과 보상 ${rewardAmount} coin을 받았습니다.`, "info");
+        })
+        .catch(() => showToast("숫자야구 코인 보상을 저장하지 못했습니다.", "error"));
+    }
+  }, [activeGameId, code, economySettings, identity, room, showToast]);
+
+  useEffect(() => {
     if (!room || !identity) return;
     const lm = room.lastMove;
 
@@ -663,6 +713,9 @@ export default function RoomClient({ code }: { code: string }) {
   const seotdaTurnStartedAt = seotdaGame?.turnStartedAt;
   const seotdaCurrentPlayerId = seotdaGame?.currentPlayerId;
   const minesweeperGame = room?.minesweeperGame;
+  const numberBaseballGame = room?.numberBaseballGame;
+  const numberBaseballTurnStartedAt = numberBaseballGame?.turnStartedAt;
+  const numberBaseballCurrentPlayerId = numberBaseballGame?.currentPlayerId;
 
   useEffect(() => {
     if (activeGameId === "girin") {
@@ -726,6 +779,28 @@ export default function RoomClient({ code }: { code: string }) {
       return () => clearInterval(interval);
     }
 
+    if (activeGameId === "numberBaseball") {
+      if (numberBaseballGame?.status !== "playing" || !numberBaseballTurnStartedAt || !numberBaseballCurrentPlayerId) {
+        setTimerSeconds(null);
+        return undefined;
+      }
+      let interval: ReturnType<typeof setInterval> | null = null;
+      function tickNumberBaseball() {
+        const elapsed = Math.floor((Date.now() - numberBaseballTurnStartedAt!) / 1_000);
+        const remaining = Math.max(0, 30 - elapsed);
+        setTimerSeconds(remaining);
+        if (remaining <= 0) {
+          if (interval) clearInterval(interval);
+          timeoutNumberBaseballTurn(code, numberBaseballCurrentPlayerId!).catch(() => {});
+        }
+      }
+      tickNumberBaseball();
+      interval = setInterval(tickNumberBaseball, 1_000);
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    }
+
     if (roomStatus !== "playing" || !turnStartedAt || !currentTurn) {
       setTimerSeconds(null);
       return undefined;
@@ -745,7 +820,7 @@ export default function RoomClient({ code }: { code: string }) {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [activeGameId, currentGirinStatus, girinTurnStartedAt, seotdaCurrentPlayerId, seotdaGame, seotdaStatus, seotdaTurnStartedAt, minesweeperGame, turnStartedAt, currentTurn, roomStatus, code]);
+  }, [activeGameId, currentGirinStatus, girinTurnStartedAt, seotdaCurrentPlayerId, seotdaGame, seotdaStatus, seotdaTurnStartedAt, minesweeperGame, numberBaseballCurrentPlayerId, numberBaseballGame, numberBaseballTurnStartedAt, turnStartedAt, currentTurn, roomStatus, code]);
 
   // Opponent disconnect → grace period → forfeit in their favor.
   const opponentRole = playerRole ? opposite(playerRole) : null;
@@ -941,6 +1016,22 @@ export default function RoomClient({ code }: { code: string }) {
       setStartConfirmOpen(true);
       return;
     }
+    if (activeGameId === "numberBaseball") {
+      if (identity.role !== "host") {
+        showToast("방장만 숫자야구를 시작할 수 있습니다.", "info");
+        return;
+      }
+      if (room.status !== "waiting") {
+        showToast("대기 중인 방에서만 숫자야구를 시작할 수 있습니다.", "info");
+        return;
+      }
+      if (getMatchParticipants(room).length < 2) {
+        showToast("두 명 이상 참여해야 숫자야구를 시작할 수 있습니다.", "info");
+        return;
+      }
+      setStartConfirmOpen(true);
+      return;
+    }
     if (room.status !== "waiting") {
       showToast("대기 중인 방에서만 대진에 참여할 수 있습니다.", "info");
       return;
@@ -1000,6 +1091,16 @@ export default function RoomClient({ code }: { code: string }) {
         await startMinesweeperGame(code);
       } catch {
         showToast("지뢰찾기를 시작하지 못했습니다.", "error");
+      }
+      return;
+    }
+    if (activeGameId === "numberBaseball") {
+      if (identity.role !== "host") return;
+      try {
+        await startNumberBaseball(code, room.host.id ?? "host");
+        showToast("숫자야구를 시작했습니다. 순서가 무작위로 정해졌습니다.", "info");
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "숫자야구를 시작하지 못했습니다.", "error");
       }
       return;
     }
@@ -1172,6 +1273,16 @@ export default function RoomClient({ code }: { code: string }) {
       resetMinesweeperGame(code)
         .then(() => showToast("새 지뢰찾기 보드를 시작했습니다.", "info"))
         .catch(() => showToast("지뢰찾기를 다시 시작하지 못했습니다.", "error"));
+      return;
+    }
+    if (activeGameId === "numberBaseball") {
+      if (room.status !== "finished") {
+        showToast("게임이 종료된 후 다시 시작할 수 있습니다.", "info");
+        return;
+      }
+      restartNumberBaseball(code, room.host.id ?? "host")
+        .then(() => showToast("새 숫자야구를 준비했습니다.", "info"))
+        .catch((error) => showToast(error instanceof Error ? error.message : "숫자야구를 다시 시작하지 못했습니다.", "error"));
       return;
     }
     if (room.status !== "finished") {
@@ -1393,12 +1504,14 @@ export default function RoomClient({ code }: { code: string }) {
   const guestParticipant = participantForRole("guest", room);
   const currentRoomHostId = roomHostId ?? "host";
   const matchParticipants = getMatchParticipants(room);
-  const avatars: ChromeAvatar[] = activeGameId === "seotda"
+  const avatars: ChromeAvatar[] = activeGameId === "seotda" || activeGameId === "numberBaseball"
     ? matchParticipants.map((participant, index) => ({
         id: participant.id,
         name: participant.name,
         color: ["#7b3fe4", "#e4693f", "#217346", "#c55a11", "#7030a0", "#2f75b5"][index % 6],
-        isTurn: room.seotdaGame?.currentPlayerId === participant.id,
+        isTurn: activeGameId === "seotda"
+          ? room.seotdaGame?.currentPlayerId === participant.id
+          : room.numberBaseballGame?.currentPlayerId === participant.id,
         isHost: participant.id === currentRoomHostId,
         online: participantOnline(room, participant) !== false,
       }))
@@ -1409,7 +1522,7 @@ export default function RoomClient({ code }: { code: string }) {
           : []),
       ];
   const activePlayerIds = new Set(avatars.map((avatar) => avatar.id));
-  const observerAvatars: ChromeAvatar[] = activeGameId === "seotda" ? [] : matchParticipants
+  const observerAvatars: ChromeAvatar[] = activeGameId === "seotda" || activeGameId === "numberBaseball" ? [] : matchParticipants
     .filter((participant) => !activePlayerIds.has(participant.id))
     .map((participant) => ({
       id: participant.id,
@@ -1433,7 +1546,7 @@ export default function RoomClient({ code }: { code: string }) {
           isTurn: guestIsTurn,
           online: avatars[1].online,
         }
-      : effectiveRole === "spectator" && activeGameId === "seotda" && avatars.find((avatar) => avatar.id === identity.participantId)
+      : effectiveRole === "spectator" && (activeGameId === "seotda" || activeGameId === "numberBaseball") && avatars.find((avatar) => avatar.id === identity.participantId)
         ? avatars.find((avatar) => avatar.id === identity.participantId)!
         : effectiveRole === "spectator"
         ? {
@@ -1467,8 +1580,10 @@ export default function RoomClient({ code }: { code: string }) {
       ? room.status === "waiting" && identity.role === "host"
       : activeGameId === "girin"
         ? girinStatus === "waiting" && identity.role === "host"
-        : activeGameId === "minesweeper"
+      : activeGameId === "minesweeper"
           ? room.status === "waiting" && identity.role === "host"
+          : activeGameId === "numberBaseball"
+            ? room.status === "waiting" && identity.role === "host"
           : room.status === "waiting";
 
   function centerGridOnMount(el: HTMLDivElement | null) {
@@ -1519,16 +1634,16 @@ export default function RoomClient({ code }: { code: string }) {
         onlyActiveGameTab
         onRematch={
           currentGameStatus === "finished" && identity.role === "host"
-            ? activeGameId === "girin" || activeGameId === "minesweeper"
+            ? activeGameId === "girin" || activeGameId === "minesweeper" || activeGameId === "numberBaseball"
               ? handleRestartClick
               : activeGameId === "seotda"
                 ? handleSeotdaRematch
                 : handleRematch
             : undefined
         }
-        rematchLabel={activeGameId === "seotda" || activeGameId === "minesweeper" ? "다시 하기" : "새 버전으로 계속"}
+        rematchLabel={activeGameId === "seotda" || activeGameId === "minesweeper" || activeGameId === "numberBaseball" ? "다시 하기" : "새 버전으로 계속"}
         onStartGame={canStartGame ? requestStartGame : undefined}
-        startActionLabel={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" ? "시작" : "대진 참여"}
+        startActionLabel={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" || activeGameId === "numberBaseball" ? "시작" : "대진 참여"}
         onRestart={currentGameStatus === "finished" && identity.role === "host" ? handleRestartClick : undefined}
         onLeave={handleLeaveClick}
         onDocumentSettings={identity.role === "host" ? openDocumentSettings : undefined}
@@ -1598,6 +1713,18 @@ export default function RoomClient({ code }: { code: string }) {
             }}
             onTimeUp={() => {
               advanceGirinRoundInRoom(code).catch(() => showToast("다음 문제로 넘어가지 못했습니다.", "error"));
+            }}
+          />
+        ) : activeGameId === "numberBaseball" ? (
+          <NumberBaseballGamePanel
+            game={room.numberBaseballGame ?? null}
+            playerId={identity.role === "host" ? room.host.id ?? "host" : identity.participantId ?? ""}
+            onGuess={(guess) => {
+              const playerId = identity.role === "host" ? room.host.id ?? "host" : identity.participantId;
+              if (!playerId) return;
+              submitNumberBaseballGuess(code, playerId, guess).catch((error) =>
+                showToast(error instanceof Error ? error.message : "숫자야구 입력을 저장하지 못했습니다.", "error"),
+              );
             }}
           />
         ) : activeGameId === "minesweeper" ? (
@@ -1690,7 +1817,7 @@ export default function RoomClient({ code }: { code: string }) {
         open={startConfirmOpen}
         onConfirm={handleConfirmStartGame}
         onCancel={() => setStartConfirmOpen(false)}
-        title={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" ? "시작하시겠습니까?" : "대진에 참여하시겠습니까?"}
+        title={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" || activeGameId === "numberBaseball" ? "시작하시겠습니까?" : "대진에 참여하시겠습니까?"}
         description={
           activeGameId === "girin"
             ? "방의 모든 참여자가 게임에 참여하고, 순번이 무작위로 정해집니다."
@@ -1698,9 +1825,11 @@ export default function RoomClient({ code }: { code: string }) {
               ? "참여자의 판돈을 잠근 뒤 패를 배분하고 베팅을 시작합니다."
               : activeGameId === "minesweeper"
                 ? "30×16 고난도 보드와 지뢰 99개로 지뢰찾기를 시작합니다."
+                : activeGameId === "numberBaseball"
+                  ? "2~3명이 순서대로 입력하고, 순서는 매 게임 무작위로 정해집니다."
                 : "두 명이 대진에 참여하면 자동으로 게임이 시작됩니다."
         }
-        confirmLabel={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" ? "시작" : "참여하기"}
+        confirmLabel={activeGameId === "girin" || activeGameId === "seotda" || activeGameId === "minesweeper" || activeGameId === "numberBaseball" ? "시작" : "참여하기"}
       />
 
       <QuickExchangeDialog

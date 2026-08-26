@@ -3,6 +3,7 @@ import { getDb } from "./firebase";
 import { canAffordSeotdaStake, normalizeSeotdaStake, SEOTDA_STAKE_MIN } from "./economy";
 import { cellKey, type Board, type Stone } from "./gomoku";
 import { finishGirinGameIfSolo, type GirinGame } from "./girin";
+import { finishNumberBaseballGameIfSolo, removeNumberBaseballParticipant } from "./numberBaseball";
 import {
   createMinesweeperGame,
   openMinesweeperCell,
@@ -23,7 +24,7 @@ import { getUnsettledSeotdaStakes, getWallet, lockSeotdaStake, settleSeotdaMatch
 
 export type PlayerRole = "host" | "guest";
 export type ParticipantRole = PlayerRole | "spectator";
-export type RoomGameId = "omok" | "girin" | "seotda" | "minesweeper";
+export type RoomGameId = "omok" | "girin" | "seotda" | "minesweeper" | "numberBaseball";
 
 export interface Player {
   id?: string;
@@ -106,6 +107,7 @@ export interface Room {
   seotdaGame?: SeotdaGame;
   girinGame?: GirinGame;
   minesweeperGame?: MinesweeperGame;
+  numberBaseballGame?: import("./numberBaseball").NumberBaseballGame;
   undoRequest?: PlayerRole | null;
   drawRequest?: PlayerRole | null;
   presence?: { host?: boolean; guest?: boolean; spectators?: Record<string, boolean> };
@@ -125,7 +127,7 @@ export const DISCONNECT_GRACE_MS = 15000;
 export const PARTICIPANT_REMOVAL_GRACE_MS = 20000;
 
 export function normalizeRoomGameId(value: unknown): RoomGameId {
-  if (value === "girin" || value === "seotda" || value === "minesweeper") return value;
+  if (value === "girin" || value === "seotda" || value === "minesweeper" || value === "numberBaseball") return value;
   return "omok";
 }
 
@@ -173,6 +175,7 @@ export function applyRoomGameSettings(
     delete nextRoom.seotdaGame;
     delete nextRoom.girinGame;
     delete nextRoom.minesweeperGame;
+    delete nextRoom.numberBaseballGame;
     delete nextRoom.matchRequests;
     delete nextRoom.gamePlayers;
   }
@@ -183,6 +186,7 @@ export function applyRoomGameSettings(
 
   delete nextRoom.moneyStake;
   if (gameId !== "minesweeper") delete nextRoom.minesweeperGame;
+  if (gameId !== "numberBaseball") delete nextRoom.numberBaseballGame;
   return nextRoom;
 }
 
@@ -393,7 +397,9 @@ export function getSeotdaParticipants(room: Room): MatchParticipant[] {
 }
 
 export function isRoomFull(room: Room): boolean {
-  return room.gameId === "seotda" && getMatchParticipants(room).length >= SEOTDA_MAX_PLAYERS;
+  if (room.gameId === "seotda") return getMatchParticipants(room).length >= SEOTDA_MAX_PLAYERS;
+  if (room.gameId === "numberBaseball") return getMatchParticipants(room).length >= 3;
+  return false;
 }
 
 export type SeotdaStartValidation =
@@ -763,6 +769,25 @@ export function finishSoloGirinInRoom(room: Room, now = Date.now()): Room {
   return { ...room, girinGame: nextGirinGame };
 }
 
+export function finishSoloNumberBaseballInRoom(room: Room, now = Date.now()): Room {
+  if (!room.numberBaseballGame) return room;
+  const participantIds = getMatchParticipants(room).map((participant) => participant.id);
+  const nextGame = finishNumberBaseballGameIfSolo(room.numberBaseballGame, participantIds, now);
+  if (nextGame === room.numberBaseballGame) return room;
+  const nextRoom = { ...room, status: "finished" as const, numberBaseballGame: nextGame };
+  delete nextRoom.turnStartedAt;
+  return nextRoom;
+}
+
+export function removeNumberBaseballParticipantFromRoom(room: Room, participantId: string | undefined, now = Date.now()): Room {
+  if (!participantId || !room.numberBaseballGame) return room;
+  const nextGame = removeNumberBaseballParticipant(room.numberBaseballGame, participantId, now);
+  if (nextGame === room.numberBaseballGame) return room;
+  const nextRoom = { ...room, numberBaseballGame: nextGame, status: nextGame.status === "finished" ? "finished" as const : room.status };
+  if (nextGame.status === "finished") delete nextRoom.turnStartedAt;
+  return nextRoom;
+}
+
 export async function createRoom(
   hostName: string,
   gameId: RoomGameId = "omok",
@@ -902,6 +927,7 @@ export async function leaveRoom(code: string, role: ParticipantRole, participant
   await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room) return room;
 
+    const departingId = role === "host" ? room.host.id ?? "host" : participantId;
     let nextRoom: Room;
     if (role === "host") {
       const hostLeft = {
@@ -913,7 +939,7 @@ export async function leaveRoom(code: string, role: ParticipantRole, participant
       nextRoom = removeParticipantFromRoom(room, role, participantId);
     }
 
-    return clearRoomIfEmpty(finishSoloGirinInRoom(nextRoom));
+    return clearRoomIfEmpty(finishSoloNumberBaseballInRoom(finishSoloGirinInRoom(removeNumberBaseballParticipantFromRoom(nextRoom, departingId))));
   });
 }
 
@@ -927,7 +953,9 @@ export function subscribeRoom(code: string, callback: (room: Room | null) => voi
 export async function transferOfflineHostInRoom(code: string): Promise<void> {
   await runTransaction(roomRef(code), (room: Room | null) => {
     if (!room) return room;
-    return clearRoomIfEmpty(finishSoloGirinInRoom(transferOfflineHost(room)));
+    const departingId = room.host.id ?? "host";
+    const nextRoom = transferOfflineHost(room);
+    return clearRoomIfEmpty(finishSoloNumberBaseballInRoom(finishSoloGirinInRoom(removeNumberBaseballParticipantFromRoom(nextRoom, departingId))));
   });
 }
 
